@@ -72,7 +72,7 @@ jspm_packages/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+# dist
 
 # Gatsby files
 .cache/
@@ -107,7 +107,7 @@ ehthumbs.db
 Thumbs.db
 
 # Build output
-dist/
+# dist/
 build/
 
 # Test files
