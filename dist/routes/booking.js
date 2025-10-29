@@ -22,6 +22,7 @@ const cancelBookingValidation = [
 ];
 // Public routes
 router.get('/time-slots/:date', bookingController_1.getAvailableTimeSlots);
+router.get('/custom-fields', bookingController_1.getPublicCustomFields);
 router.post('/', createBookingValidation, bookingController_1.createBooking);
 // Protected routes
 router.get('/', auth_1.authenticate, (0, auth_1.authorize)('admin', 'staff'), bookingController_1.getBookings);

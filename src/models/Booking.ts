@@ -6,8 +6,8 @@ export interface IBookingFieldValue {
 }
 
 export interface IBooking extends Document {
-  customerName: string;
-  customerEmail: string;
+  customerName?: string;
+  customerEmail?: string;
   customerPhone?: string;
   bookingDate: Date;
   timeSlot: string;
@@ -36,12 +36,12 @@ const BookingFieldValueSchema = new Schema<IBookingFieldValue>({
 const BookingSchema = new Schema<IBooking>({
   customerName: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
   customerEmail: {
     type: String,
-    required: true,
+    required: false,
     trim: true,
     lowercase: true
   },

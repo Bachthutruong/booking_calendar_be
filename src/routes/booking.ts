@@ -6,7 +6,8 @@ import {
   getBookings, 
   getBookingById, 
   updateBookingStatus,
-  cancelBooking
+  cancelBooking,
+  getPublicCustomFields
 } from '../controllers/bookingController';
 import { authenticate, authorize } from '../middleware/auth';
 
@@ -29,6 +30,7 @@ const cancelBookingValidation = [
 
 // Public routes
 router.get('/time-slots/:date', getAvailableTimeSlots);
+router.get('/custom-fields', getPublicCustomFields);
 router.post('/', createBookingValidation, createBooking);
 
 // Protected routes

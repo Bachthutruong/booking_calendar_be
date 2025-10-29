@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelBooking = exports.updateBookingStatus = exports.getBookingById = exports.getBookings = exports.createBooking = exports.getAvailableTimeSlots = void 0;
+exports.cancelBooking = exports.updateBookingStatus = exports.getBookingById = exports.getBookings = exports.createBooking = exports.getPublicCustomFields = exports.getAvailableTimeSlots = void 0;
 const express_validator_1 = require("express-validator");
 const Booking_1 = __importDefault(require("../models/Booking"));
 const TimeSlot_1 = __importDefault(require("../models/TimeSlot"));
@@ -91,6 +91,39 @@ const getAvailableTimeSlots = async (req, res) => {
     }
 };
 exports.getAvailableTimeSlots = getAvailableTimeSlots;
+// Public: Get active custom fields for booking form
+const getPublicCustomFields = async (req, res) => {
+    try {
+        const customFields = await CustomField_1.default.find({ isActive: true }).sort({ order: 1 });
+        res.json({ success: true, customFields });
+    }
+    catch (error) {
+        console.error('Get public custom fields error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+exports.getPublicCustomFields = getPublicCustomFields;
+// Helper: enrich a booking document with full custom field definitions
+const enrichBookingWithCustomFields = async (booking) => {
+    const defs = await CustomField_1.default.find().sort({ order: 1 });
+    const valueById = {};
+    (booking.customFields || []).forEach((f) => {
+        valueById[f.fieldId] = f.value;
+    });
+    const enriched = defs.map((d) => ({
+        fieldId: String(d._id),
+        name: d.name,
+        label: d.label,
+        type: d.type,
+        required: d.required,
+        isActive: d.isActive,
+        value: valueById[String(d._id)] ?? ''
+    }));
+    return {
+        ...booking.toObject(),
+        customFields: enriched
+    };
+};
 const createBooking = async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -117,19 +150,12 @@ const createBooking = async (req, res) => {
         if (existingBookings >= slot.maxBookings) {
             return res.status(400).json({ message: 'Time slot is fully booked' });
         }
-        // Validate custom fields
-        const customFieldIds = customFields?.map((field) => field.fieldId) || [];
-        const requiredFields = await CustomField_1.default.find({
-            _id: { $in: customFieldIds },
-            required: true,
-            isActive: true
-        });
-        for (const field of requiredFields) {
-            const fieldValue = customFields?.find((f) => f.fieldId === field._id.toString());
-            if (!fieldValue || !fieldValue.value) {
-                return res.status(400).json({
-                    message: `Field ${field.label} is required`
-                });
+        // Validate required custom fields (check against ALL active required fields)
+        const activeRequired = await CustomField_1.default.find({ required: true, isActive: true });
+        for (const field of activeRequired) {
+            const provided = (customFields || []).find((f) => f.fieldId === String(field._id));
+            if (!provided || provided.value === undefined || provided.value === null || provided.value === '' || (Array.isArray(provided.value) && provided.value.length === 0)) {
+                return res.status(400).json({ message: `Field ${field.label} is required` });
             }
         }
         // Create booking
@@ -145,17 +171,8 @@ const createBooking = async (req, res) => {
         await booking.save();
         // Send confirmation emails
         await (0, emailService_1.sendBookingConfirmationEmail)(booking);
-        res.status(201).json({
-            success: true,
-            booking: {
-                id: booking._id,
-                customerName: booking.customerName,
-                customerEmail: booking.customerEmail,
-                bookingDate: booking.bookingDate,
-                timeSlot: booking.timeSlot,
-                status: booking.status
-            }
-        });
+        const enriched = await enrichBookingWithCustomFields(booking);
+        res.status(201).json({ success: true, booking: enriched });
     }
     catch (error) {
         console.error('Create booking error:', error);
@@ -190,9 +207,10 @@ const getBookings = async (req, res) => {
             .skip(skip)
             .limit(Number(limit));
         const total = await Booking_1.default.countDocuments(filter);
+        const enrichedBookings = await Promise.all(bookings.map((b) => enrichBookingWithCustomFields(b)));
         res.json({
             success: true,
-            bookings,
+            bookings: enrichedBookings,
             pagination: {
                 current: Number(page),
                 pages: Math.ceil(total / Number(limit)),
@@ -214,10 +232,8 @@ const getBookingById = async (req, res) => {
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
-        res.json({
-            success: true,
-            booking
-        });
+        const enriched = await enrichBookingWithCustomFields(booking);
+        res.json({ success: true, booking: enriched });
     }
     catch (error) {
         console.error('Get booking by ID error:', error);

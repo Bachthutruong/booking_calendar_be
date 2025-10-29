@@ -47,12 +47,12 @@ const BookingFieldValueSchema = new mongoose_1.Schema({
 const BookingSchema = new mongoose_1.Schema({
     customerName: {
         type: String,
-        required: true,
+        required: false,
         trim: true
     },
     customerEmail: {
         type: String,
-        required: true,
+        required: false,
         trim: true,
         lowercase: true
     },

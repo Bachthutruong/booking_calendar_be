@@ -92,13 +92,15 @@ export const sendBookingConfirmationEmail = async (booking: any) => {
     
     const customerEmailHtml = replaceTemplateVariables(content, variables);
 
-    // Gửi email cho khách hàng
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-      to: booking.customerEmail,
-      subject: subject,
-      html: customerEmailHtml
-    });
+    // Gửi email cho khách hàng (nếu có email)
+    if (booking.customerEmail) {
+      await resend.emails.send({
+        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        to: booking.customerEmail,
+        subject: subject,
+        html: customerEmailHtml
+      });
+    }
 
     // Gửi email cho admin (sử dụng EMAIL_TO từ .env)
     const adminEmailHtml = `
@@ -148,12 +150,14 @@ export const sendBookingReminderEmail = async (booking: any) => {
     
     const customerEmailHtml = replaceTemplateVariables(content, variables);
 
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-      to: booking.customerEmail,
-      subject: subject,
-      html: customerEmailHtml
-    });
+    if (booking.customerEmail) {
+      await resend.emails.send({
+        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        to: booking.customerEmail,
+        subject: subject,
+        html: customerEmailHtml
+      });
+    }
 
     // Email to admin
     const adminEmailHtml = `
@@ -200,12 +204,14 @@ export const sendBookingCancellationEmail = async (booking: any, cancellationRea
     
     const customerEmailHtml = replaceTemplateVariables(content, variables);
 
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-      to: booking.customerEmail,
-      subject: subject,
-      html: customerEmailHtml
-    });
+    if (booking.customerEmail) {
+      await resend.emails.send({
+        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        to: booking.customerEmail,
+        subject: subject,
+        html: customerEmailHtml
+      });
+    }
 
     // Email to admin
     const adminEmailHtml = `

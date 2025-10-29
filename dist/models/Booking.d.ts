@@ -4,8 +4,8 @@ export interface IBookingFieldValue {
     value: any;
 }
 export interface IBooking extends Document {
-    customerName: string;
-    customerEmail: string;
+    customerName?: string;
+    customerEmail?: string;
     customerPhone?: string;
     bookingDate: Date;
     timeSlot: string;
