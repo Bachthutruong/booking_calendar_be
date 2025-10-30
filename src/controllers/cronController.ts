@@ -1,35 +1,46 @@
 import { Request, Response } from 'express';
 import Booking from '../models/Booking';
 import { sendBookingReminderEmail } from '../utils/emailService';
+import SystemConfig from '../models/SystemConfig';
 
 export const sendReminderEmails = async (req: Request, res: Response) => {
   try {
-    // Get tomorrow's date
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    
-    const dayAfter = new Date(tomorrow);
-    dayAfter.setHours(23, 59, 59, 999);
+    // Load reminder hours from config (default 24)
+    const generalCfg = await SystemConfig.findOne({ type: 'general', isActive: true });
+    const reminderHours = Number((generalCfg?.config as any)?.reminderHoursBefore ?? 24);
+    const now = new Date();
+    const target = new Date(now.getTime() + reminderHours * 60 * 60 * 1000);
 
-    // Find all confirmed bookings for tomorrow
-    const bookings = await Booking.find({
-      bookingDate: {
-        $gte: tomorrow,
-        $lt: dayAfter
-      },
+    // We will find confirmed bookings whose start datetime equals target date+timeSlot within a small window
+    const startOfTargetDay = new Date(target);
+    startOfTargetDay.setHours(0, 0, 0, 0);
+    const endOfTargetDay = new Date(target);
+    endOfTargetDay.setHours(23, 59, 59, 999);
+
+    const dayBookings = await Booking.find({
+      bookingDate: { $gte: startOfTargetDay, $lt: endOfTargetDay },
       status: 'confirmed'
     });
 
     let successCount = 0;
     let errorCount = 0;
 
-    // Send reminder emails
-    for (const booking of bookings) {
+    // Send reminder emails for bookings matching the target hour/minute
+    for (const booking of dayBookings) {
       try {
-        await sendBookingReminderEmail(booking);
-        successCount++;
-        console.log(`Reminder email sent for booking ${booking._id}`);
+        // Build the start datetime from bookingDate and timeSlot (format HH:mm-HH:mm)
+        const startStr = String(booking.timeSlot).split('-')[0];
+        const [h, m] = startStr.split(':').map((x: string) => parseInt(x, 10));
+        const bookingStart = new Date(booking.bookingDate);
+        bookingStart.setHours(h || 0, m || 0, 0, 0);
+        // If bookingStart matches target within 5 minutes
+        const diffMs = Math.abs(bookingStart.getTime() - target.getTime());
+        const withinWindow = diffMs <= 5 * 60 * 1000;
+        if (withinWindow) {
+          await sendBookingReminderEmail(booking);
+          successCount++;
+          console.log(`Reminder email sent for booking ${booking._id}`);
+        }
       } catch (error) {
         errorCount++;
         console.error(`Failed to send reminder email for booking ${booking._id}:`, error);
@@ -39,7 +50,7 @@ export const sendReminderEmails = async (req: Request, res: Response) => {
     res.json({
       success: true,
       message: `Reminder emails processed: ${successCount} sent, ${errorCount} failed`,
-      totalBookings: bookings.length,
+      totalBookings: dayBookings.length,
       successCount,
       errorCount
     });

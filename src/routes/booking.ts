@@ -37,6 +37,6 @@ router.post('/', createBookingValidation, createBooking);
 router.get('/', authenticate, authorize('admin', 'staff'), getBookings);
 router.get('/:id', authenticate, authorize('admin', 'staff'), getBookingById);
 router.put('/:id/status', authenticate, authorize('admin', 'staff'), updateStatusValidation, updateBookingStatus);
-router.put('/:id/cancel', authenticate, authorize('admin', 'staff'), cancelBookingValidation, cancelBooking);
+router.put('/:id/cancel', authenticate, authorize('admin'), cancelBookingValidation, cancelBooking);
 
 export default router;

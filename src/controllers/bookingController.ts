@@ -3,7 +3,7 @@ import { validationResult } from 'express-validator';
 import Booking from '../models/Booking';
 import TimeSlot from '../models/TimeSlot';
 import CustomField from '../models/CustomField';
-import { sendBookingConfirmationEmail, sendBookingReminderEmail, sendBookingCancellationEmail } from '../utils/emailService';
+import { sendBookingConfirmationEmail, sendBookingReminderEmail, sendBookingCancellationEmail, sendBookingConfirmedEmails } from '../utils/emailService';
 import { IUser } from '../models/User';
 
 // Extend Express Request interface
@@ -17,9 +17,10 @@ export const getAvailableTimeSlots = async (req: Request, res: Response) => {
     const { date } = req.params;
     const bookingDate = new Date(date);
     const dayOfWeek = bookingDate.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
     let timeSlots = [];
+
+    console.log('[TimeSlots] Incoming request', { date, dayOfWeek })
 
     // Priority 1: Specific date slots (highest priority)
     const specificDateSlots = await TimeSlot.find({
@@ -30,34 +31,39 @@ export const getAvailableTimeSlots = async (req: Request, res: Response) => {
       isActive: true
     }).sort({ startTime: 1 });
 
+    console.log('[TimeSlots] Count specificDateSlots', { count: specificDateSlots.length })
+
     if (specificDateSlots.length > 0) {
       timeSlots = specificDateSlots;
     } else {
-      // Priority 2: Weekend slots (if it's weekend)
-      if (isWeekend) {
-        const weekendSlots = await TimeSlot.find({
-          dayOfWeek,
-          isWeekend: true,
-          isActive: true
-        }).sort({ startTime: 1 });
+      // Hard stop: if there is an explicit closed-day sentinel, return empty
+      const closedSentinel = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, maxBookings: 0 })
+      if (closedSentinel > 0) {
+        console.log('[TimeSlots] Closed-day sentinel detected, returning empty', { dayOfWeek })
+        return res.json({ success: true, timeSlots: [] })
+      }
 
-        if (weekendSlots.length > 0) {
-          timeSlots = weekendSlots;
-        } else {
-          // Priority 3: All days slots (fallback)
-          timeSlots = await TimeSlot.find({
-            dayOfWeek,
-            isWeekend: false,
-            isActive: true
-          }).sort({ startTime: 1 });
-        }
+      // Pre-calc counts for debug
+      const weekdayExplicitCountPre = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: 'weekday' })
+      const legacyCountPre = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: { $exists: false }, specificDate: { $exists: false } })
+      const allDaysCountPre = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: 'all' })
+      console.log('[TimeSlots] Counts', { weekdayExplicitCountPre, legacyCountPre, allDaysCountPre })
+
+      // Priority 2: Explicit weekday rules only (do NOT treat legacy as weekday)
+      const weekdayExplicitCount = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: 'weekday' })
+      if (weekdayExplicitCount > 0) {
+        timeSlots = await TimeSlot.find({ dayOfWeek, isActive: true, ruleType: 'weekday' }).sort({ startTime: 1 })
+        console.log('[TimeSlots] Using explicit weekday rules', { dayOfWeek, count: timeSlots.length })
       } else {
-        // Priority 3: All days slots (for weekdays)
-        timeSlots = await TimeSlot.find({
-          dayOfWeek,
-          isWeekend: false,
-          isActive: true
-        }).sort({ startTime: 1 });
+        // Fallback: legacy (no ruleType) or explicit all-days
+        const legacy = await TimeSlot.find({ dayOfWeek, isActive: true, ruleType: { $exists: false } }).sort({ startTime: 1 })
+        if (legacy.length > 0) {
+          timeSlots = legacy
+          console.log('[TimeSlots] Using legacy rules (treated as ALL)', { dayOfWeek, count: timeSlots.length })
+        } else {
+          timeSlots = await TimeSlot.find({ dayOfWeek, isActive: true, ruleType: 'all' }).sort({ startTime: 1 })
+          console.log('[TimeSlots] Using all-days rules', { dayOfWeek, count: timeSlots.length })
+        }
       }
     }
 
@@ -83,8 +89,9 @@ export const getAvailableTimeSlots = async (req: Request, res: Response) => {
 
     // Filter available slots
     const availableSlots = slotsWithBookings.filter(slot => 
-      slot.currentBookings < slot.maxBookings
+      slot.maxBookings > 0 && slot.currentBookings < slot.maxBookings
     );
+    console.log('[TimeSlots] Available results', { dayOfWeek, total: availableSlots.length, times: availableSlots.map(s => `${s.startTime}-${s.endTime}`) })
 
     res.json({
       success: true,
@@ -202,17 +209,31 @@ export const createBooking = async (req: Request, res: Response) => {
 
 export const getBookings = async (req: Request, res: Response) => {
   try {
-    const { page = 1, limit = 10, status, date, search } = req.query;
+    const { page = 1, limit = 10, status, date, search, range } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
     let filter: any = {};
-    if (status) filter.status = status;
+    if (status && status !== 'all') filter.status = status;
     if (date) {
       const dateObj = new Date(date as string);
       filter.bookingDate = {
         $gte: new Date(dateObj.setHours(0, 0, 0, 0)),
         $lt: new Date(dateObj.setHours(23, 59, 59, 999))
       };
+    }
+    // Range filter support
+    if (range === 'last7') {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now);
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      filter.bookingDate = {
+        ...(filter.bookingDate || {}),
+        $gte: new Date(sevenDaysAgo.setHours(0, 0, 0, 0))
+      };
+      // If no explicit status provided, default to confirmed in last7 range
+      if (!status || status === 'all') {
+        filter.status = 'confirmed';
+      }
     }
     
     // Add search functionality
@@ -225,7 +246,8 @@ export const getBookings = async (req: Request, res: Response) => {
     }
 
     const bookings = await Booking.find(filter)
-      .sort({ createdAt: -1 })
+      .sort({ bookingDate: -1, createdAt: -1 })
+      .populate('cancelledBy', 'name email')
       .skip(skip)
       .limit(Number(limit));
 
@@ -251,7 +273,7 @@ export const getBookings = async (req: Request, res: Response) => {
 export const getBookingById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const booking = await Booking.findById(id);
+    const booking = await Booking.findById(id).populate('cancelledBy', 'name email');
 
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
@@ -265,7 +287,7 @@ export const getBookingById = async (req: Request, res: Response) => {
   }
 };
 
-export const updateBookingStatus = async (req: Request, res: Response) => {
+export const updateBookingStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -279,9 +301,9 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     booking.status = status;
     await booking.save();
 
-    // Send confirmation email when status changes to 'confirmed'
+    // Khi xác nhận: gửi email cho user và cho các admin khác
     if (status === 'confirmed' && previousStatus !== 'confirmed') {
-      await sendBookingConfirmationEmail(booking);
+      await sendBookingConfirmedEmails(booking, req.userId);
     }
 
     res.json({
@@ -316,8 +338,8 @@ export const cancelBooking = async (req: AuthRequest, res: Response) => {
     booking.cancellationReason = cancellationReason;
     await booking.save();
     
-    // Send cancellation email
-    await sendBookingCancellationEmail(booking, cancellationReason);
+    // Send cancellation email (notify other admins and the user)
+    await sendBookingCancellationEmail(booking, cancellationReason, req.userId);
     
     res.json({
       success: true,

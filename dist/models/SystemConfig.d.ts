@@ -1,6 +1,6 @@
 import mongoose, { Document } from 'mongoose';
 export interface ISystemConfig extends Document {
-    type: 'footer' | 'email_template' | 'general';
+    type: 'footer' | 'email_template' | 'general' | 'success_page';
     config: {
         companyName?: string;
         companyDescription?: string;
@@ -15,10 +15,19 @@ export interface ISystemConfig extends Document {
         bookingReminderContent?: string;
         bookingCancellationSubject?: string;
         bookingCancellationContent?: string;
+        adminNewBookingSubject?: string;
+        adminNewBookingContent?: string;
+        adminBookingConfirmedSubject?: string;
+        adminBookingConfirmedContent?: string;
+        adminBookingCancelledSubject?: string;
+        adminBookingCancelledContent?: string;
+        userBookingConfirmedSubject?: string;
+        userBookingConfirmedContent?: string;
         siteName?: string;
         siteDescription?: string;
         timezone?: string;
         reminderTime?: string;
+        reminderHoursBefore?: number;
     };
     isActive: boolean;
     createdAt: Date;

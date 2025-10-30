@@ -1,7 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendBookingCancellationEmail = exports.sendBookingReminderEmail = exports.sendBookingConfirmationEmail = void 0;
+exports.sendBookingConfirmedEmails = exports.sendBookingCancellationEmail = exports.sendBookingReminderEmail = exports.sendBookingConfirmationEmail = void 0;
 const resend_1 = require("resend");
+const User_1 = __importDefault(require("../models/User"));
+const SystemConfig_1 = __importDefault(require("../models/SystemConfig"));
 // Kiểm tra cấu hình email
 const isEmailConfigured = () => {
     return process.env.RESEND_API_KEY || 're_QqaMiRDg_97ff4nmbPHUFRrC2ghLAoU5R';
@@ -48,9 +53,61 @@ const getEmailTemplate = async (type) => {
       </ul>
       <p>Vui lòng liên hệ với chúng tôi nếu bạn muốn đặt lịch mới.</p>
       <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+   `,
+        // Admin defaults
+        adminNewBookingSubject: 'Đặt lịch mới cần xác nhận',
+        adminNewBookingContent: `
+      <h2>Đặt lịch tư vấn mới</h2>
+      <p>Có một đặt lịch tư vấn mới cần được xác nhận:</p>
+      <ul>
+        <li><strong>Tên khách hàng:</strong> {{customerName}}</li>
+        <li><strong>Email:</strong> {{customerEmail}}</li>
+        {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+        <li><strong>Ngày:</strong> {{bookingDate}}</li>
+        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+        {{#if notes}}<li><strong>Ghi chú:</strong> {{notes}}</li>{{/if}}
+      </ul>
+    `,
+        adminBookingConfirmedSubject: 'Lịch đã được xác nhận',
+        adminBookingConfirmedContent: `
+      <h2>Lịch tư vấn đã được xác nhận</h2>
+      <p>Lịch với khách hàng {{customerName}} đã được xác nhận.</p>
+      <ul>
+        <li><strong>Ngày:</strong> {{bookingDate}}</li>
+        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+      </ul>
+    `,
+        adminBookingCancelledSubject: 'Lịch đã bị hủy',
+        adminBookingCancelledContent: `
+      <h2>Lịch tư vấn đã bị hủy</h2>
+      <p>Lịch với khách hàng {{customerName}} đã bị hủy.</p>
+      <ul>
+        <li><strong>Ngày:</strong> {{bookingDate}}</li>
+        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+        {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+      </ul>
+    `,
+        userBookingConfirmedSubject: 'Lịch của bạn đã được xác nhận',
+        userBookingConfirmedContent: `
+      <h2>Lịch tư vấn đã được xác nhận</h2>
+      <p>Xin chào {{customerName}},</p>
+      <p>Lịch tư vấn của bạn đã được xác nhận:</p>
+      <ul>
+        <li><strong>Ngày:</strong> {{bookingDate}}</li>
+        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+      </ul>
+      <p>Hẹn gặp bạn!</p>
     `
     };
-    return defaultTemplates[type] || '';
+    // Try load from DB config overrides
+    try {
+        const cfg = await SystemConfig_1.default.findOne({ type: 'email_template', isActive: true });
+        const fromDb = (cfg?.config || {});
+        return fromDb[type] || defaultTemplates[type] || '';
+    }
+    catch {
+        return defaultTemplates[type] || '';
+    }
 };
 const replaceTemplateVariables = (template, variables) => {
     let result = template;
@@ -89,26 +146,20 @@ const sendBookingConfirmationEmail = async (booking) => {
                 html: customerEmailHtml
             });
         }
-        // Gửi email cho admin (sử dụng EMAIL_TO từ .env)
-        const adminEmailHtml = `
-      <h2>Đặt lịch tư vấn mới</h2>
-      <p>Có một đặt lịch tư vấn mới:</p>
-      <ul>
-        <li><strong>Tên khách hàng:</strong> ${booking.customerName}</li>
-        <li><strong>Email:</strong> ${booking.customerEmail}</li>
-        <li><strong>Số điện thoại:</strong> ${booking.customerPhone || 'Không có'}</li>
-        <li><strong>Ngày:</strong> ${new Date(booking.bookingDate).toLocaleDateString('vi-VN')}</li>
-        <li><strong>Giờ:</strong> ${booking.timeSlot}</li>
-        ${booking.notes ? `<li><strong>Ghi chú:</strong> ${booking.notes}</li>` : ''}
-      </ul>
-      <p>Vui lòng kiểm tra và xác nhận lịch hẹn này.</p>
-    `;
-        await resend.emails.send({
-            from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-            to: process.env.EMAIL_TO || 'vuduybachvp@gmail.com',
-            subject: 'Đặt lịch tư vấn mới',
-            html: adminEmailHtml
-        });
+        // Gửi email cho tất cả admin
+        const adminSubject = await getEmailTemplate('adminNewBookingSubject');
+        const adminContent = await getEmailTemplate('adminNewBookingContent');
+        const adminHtml = replaceTemplateVariables(adminContent, variables);
+        const admins = await User_1.default.find({ role: 'admin', isActive: true }).select('email');
+        const adminEmails = admins.map((u) => u.email).filter(Boolean);
+        if (adminEmails.length > 0) {
+            await resend.emails.send({
+                from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+                to: adminEmails,
+                subject: adminSubject || 'Đặt lịch tư vấn mới',
+                html: adminHtml
+            });
+        }
         console.log('Email xác nhận đã được gửi thành công qua Resend');
     }
     catch (error) {
@@ -140,31 +191,24 @@ const sendBookingReminderEmail = async (booking) => {
                 html: customerEmailHtml
             });
         }
-        // Email to admin
-        const adminEmailHtml = `
-      <h2>Nhắc nhở lịch tư vấn</h2>
-      <p>Lịch tư vấn với khách hàng ${booking.customerName} sẽ diễn ra vào ngày mai:</p>
-      <ul>
-        <li><strong>Tên khách hàng:</strong> ${booking.customerName}</li>
-        <li><strong>Email:</strong> ${booking.customerEmail}</li>
-        <li><strong>Ngày:</strong> ${new Date(booking.bookingDate).toLocaleDateString('vi-VN')}</li>
-        <li><strong>Giờ:</strong> ${booking.timeSlot}</li>
-      </ul>
-      <p>Vui lòng chuẩn bị cho buổi tư vấn này.</p>
-    `;
-        await resend.emails.send({
-            from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-            to: process.env.EMAIL_TO || 'vuduybachvp@gmail.com',
-            subject: 'Nhắc nhở lịch tư vấn',
-            html: adminEmailHtml
-        });
+        // Email to all admins as well
+        const admins = await User_1.default.find({ role: 'admin', isActive: true }).select('email');
+        const adminEmails = admins.map((u) => u.email).filter(Boolean);
+        if (adminEmails.length > 0) {
+            await resend.emails.send({
+                from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+                to: adminEmails,
+                subject: await getEmailTemplate('bookingReminderSubject'),
+                html: customerEmailHtml
+            });
+        }
     }
     catch (error) {
         console.error('Send booking reminder email error:', error);
     }
 };
 exports.sendBookingReminderEmail = sendBookingReminderEmail;
-const sendBookingCancellationEmail = async (booking, cancellationReason) => {
+const sendBookingCancellationEmail = async (booking, cancellationReason, excludeAdminId) => {
     try {
         if (!isEmailConfigured() || !resend) {
             console.log('Email không được cấu hình. Bỏ qua gửi email hủy lịch.');
@@ -189,28 +233,76 @@ const sendBookingCancellationEmail = async (booking, cancellationReason) => {
                 html: customerEmailHtml
             });
         }
-        // Email to admin
-        const adminEmailHtml = `
-      <h2>Hủy lịch tư vấn</h2>
-      <p>Lịch tư vấn đã bị hủy:</p>
-      <ul>
-        <li><strong>Tên khách hàng:</strong> ${booking.customerName}</li>
-        <li><strong>Email:</strong> ${booking.customerEmail}</li>
-        <li><strong>Ngày:</strong> ${new Date(booking.bookingDate).toLocaleDateString('vi-VN')}</li>
-        <li><strong>Giờ:</strong> ${booking.timeSlot}</li>
-        ${cancellationReason ? `<li><strong>Lý do hủy:</strong> ${cancellationReason}</li>` : ''}
-      </ul>
-    `;
-        await resend.emails.send({
-            from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-            to: process.env.EMAIL_TO || 'vuduybachvp@gmail.com',
-            subject: 'Hủy lịch tư vấn',
-            html: adminEmailHtml
-        });
+        // Email to all admins (exclude actor if provided)
+        const adminSubject = await getEmailTemplate('adminBookingCancelledSubject');
+        const adminContent = await getEmailTemplate('adminBookingCancelledContent');
+        const adminHtml = replaceTemplateVariables(adminContent, variables);
+        const adminQuery = { role: 'admin', isActive: true };
+        const admins = await User_1.default.find(adminQuery).select('email _id');
+        const adminEmails = admins
+            .filter((u) => !excludeAdminId || String(u._id) !== String(excludeAdminId))
+            .map((u) => u.email)
+            .filter(Boolean);
+        if (adminEmails.length > 0) {
+            await resend.emails.send({
+                from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+                to: adminEmails,
+                subject: adminSubject || 'Hủy lịch tư vấn',
+                html: adminHtml
+            });
+        }
     }
     catch (error) {
         console.error('Send booking cancellation email error:', error);
     }
 };
 exports.sendBookingCancellationEmail = sendBookingCancellationEmail;
+const sendBookingConfirmedEmails = async (booking, actorAdminId) => {
+    try {
+        if (!isEmailConfigured() || !resend) {
+            console.log('Email không được cấu hình. Bỏ qua gửi email xác nhận sau khi duyệt.');
+            return;
+        }
+        const variables = {
+            customerName: booking.customerName,
+            customerEmail: booking.customerEmail,
+            customerPhone: booking.customerPhone,
+            bookingDate: new Date(booking.bookingDate).toLocaleDateString('vi-VN'),
+            timeSlot: booking.timeSlot
+        };
+        // Send to user
+        const userSubject = (await getEmailTemplate('userBookingConfirmedSubject')) || (await getEmailTemplate('bookingConfirmationSubject'));
+        const userContent = (await getEmailTemplate('userBookingConfirmedContent')) || (await getEmailTemplate('bookingConfirmationContent'));
+        const userHtml = replaceTemplateVariables(userContent, variables);
+        if (booking.customerEmail) {
+            await resend.emails.send({
+                from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+                to: booking.customerEmail,
+                subject: userSubject,
+                html: userHtml
+            });
+        }
+        // Notify other admins
+        const adminSubject = await getEmailTemplate('adminBookingConfirmedSubject');
+        const adminContent = await getEmailTemplate('adminBookingConfirmedContent');
+        const adminHtml = replaceTemplateVariables(adminContent, variables);
+        const admins = await User_1.default.find({ role: 'admin', isActive: true }).select('email _id');
+        const adminEmails = admins
+            .filter((u) => !actorAdminId || String(u._id) !== String(actorAdminId))
+            .map((u) => u.email)
+            .filter(Boolean);
+        if (adminEmails.length > 0) {
+            await resend.emails.send({
+                from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+                to: adminEmails,
+                subject: adminSubject || 'Lịch đã được xác nhận',
+                html: adminHtml
+            });
+        }
+    }
+    catch (error) {
+        console.error('Send booking confirmed emails error:', error);
+    }
+};
+exports.sendBookingConfirmedEmails = sendBookingConfirmedEmails;
 //# sourceMappingURL=emailService.js.map

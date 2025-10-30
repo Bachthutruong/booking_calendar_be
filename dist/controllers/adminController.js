@@ -29,7 +29,7 @@ const createTimeSlot = async (req, res) => {
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
-        const { type, timeSlots, specificDate, maxBookings, isActive } = req.body;
+        const { type, timeSlots, specificDate, maxBookings, isActive, dayOfWeek } = req.body;
         const createdSlots = [];
         // Create time slots based on type
         if (type === 'specific' && specificDate) {
@@ -43,33 +43,33 @@ const createTimeSlot = async (req, res) => {
                     isWeekend: false,
                     specificDate: new Date(specificDate),
                     maxBookings,
-                    currentBookings: 0
+                    currentBookings: 0,
+                    ruleType: 'specific'
                 });
                 await timeSlot.save();
                 createdSlots.push(timeSlot);
             }
         }
-        else if (type === 'weekend') {
-            // Create slots for weekend (Saturday and Sunday)
-            for (const dayOfWeek of [0, 6]) { // Sunday and Saturday
-                for (const slot of timeSlots) {
-                    const timeSlot = new TimeSlot_1.default({
-                        dayOfWeek,
-                        startTime: slot.startTime,
-                        endTime: slot.endTime,
-                        isActive,
-                        isWeekend: true,
-                        maxBookings,
-                        currentBookings: 0
-                    });
-                    await timeSlot.save();
-                    createdSlots.push(timeSlot);
-                }
+        else if (type === 'weekday') {
+            // Create slots for a specific weekday (0-6). If timeSlots is empty, create a closed-day sentinel.
+            if (dayOfWeek === undefined || dayOfWeek === null) {
+                return res.status(400).json({ message: 'dayOfWeek is required for weekday type' });
             }
-        }
-        else {
-            // Create slots for all days (Monday to Sunday)
-            for (const dayOfWeek of [1, 2, 3, 4, 5, 6, 0]) { // Monday to Sunday
+            if (!timeSlots || timeSlots.length === 0) {
+                const timeSlot = new TimeSlot_1.default({
+                    dayOfWeek,
+                    startTime: '00:00',
+                    endTime: '00:00',
+                    isActive: true,
+                    isWeekend: false,
+                    maxBookings: 0,
+                    currentBookings: 0,
+                    ruleType: 'weekday'
+                });
+                await timeSlot.save();
+                createdSlots.push(timeSlot);
+            }
+            else {
                 for (const slot of timeSlots) {
                     const timeSlot = new TimeSlot_1.default({
                         dayOfWeek,
@@ -78,10 +78,49 @@ const createTimeSlot = async (req, res) => {
                         isActive,
                         isWeekend: false,
                         maxBookings,
-                        currentBookings: 0
+                        currentBookings: 0,
+                        ruleType: 'weekday'
                     });
                     await timeSlot.save();
                     createdSlots.push(timeSlot);
+                }
+            }
+        }
+        else {
+            // Create slots for all days (Monday to Sunday). If empty, create closed-day sentinels for all days.
+            const days = [1, 2, 3, 4, 5, 6, 0];
+            if (!timeSlots || timeSlots.length === 0) {
+                for (const d of days) {
+                    const timeSlot = new TimeSlot_1.default({
+                        dayOfWeek: d,
+                        startTime: '00:00',
+                        endTime: '00:00',
+                        isActive: true,
+                        isWeekend: false,
+                        maxBookings: 0,
+                        currentBookings: 0,
+                        ruleType: 'all'
+                    });
+                    await timeSlot.save();
+                    createdSlots.push(timeSlot);
+                }
+            }
+            else {
+                for (const d of days) {
+                    for (const slot of timeSlots) {
+                        const timeSlot = new TimeSlot_1.default({
+                            dayOfWeek: d,
+                            startTime: slot.startTime,
+                            endTime: slot.endTime,
+                            isActive,
+                            isWeekend: false,
+                            maxBookings,
+                            currentBookings: 0,
+                            ruleType: 'all'
+                        });
+                        await timeSlot.save();
+                        createdSlots.push(timeSlot);
+                    }
                 }
             }
         }
@@ -295,7 +334,7 @@ const updateUser = async (req, res) => {
             return res.status(400).json({ errors: errors.array() });
         }
         const { id } = req.params;
-        const { email, name, role, phone, isActive } = req.body;
+        const { email, name, role, phone, isActive, password } = req.body;
         const user = await User_1.default.findById(id);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -317,6 +356,9 @@ const updateUser = async (req, res) => {
             user.phone = phone;
         if (isActive !== undefined)
             user.isActive = isActive;
+        // If password provided and passed validation, update it (pre-save hook will hash)
+        if (password)
+            user.password = password;
         await user.save();
         res.json({
             success: true,

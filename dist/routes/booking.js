@@ -28,6 +28,6 @@ router.post('/', createBookingValidation, bookingController_1.createBooking);
 router.get('/', auth_1.authenticate, (0, auth_1.authorize)('admin', 'staff'), bookingController_1.getBookings);
 router.get('/:id', auth_1.authenticate, (0, auth_1.authorize)('admin', 'staff'), bookingController_1.getBookingById);
 router.put('/:id/status', auth_1.authenticate, (0, auth_1.authorize)('admin', 'staff'), updateStatusValidation, bookingController_1.updateBookingStatus);
-router.put('/:id/cancel', auth_1.authenticate, (0, auth_1.authorize)('admin', 'staff'), cancelBookingValidation, bookingController_1.cancelBooking);
+router.put('/:id/cancel', auth_1.authenticate, (0, auth_1.authorize)('admin'), cancelBookingValidation, bookingController_1.cancelBooking);
 exports.default = router;
 //# sourceMappingURL=booking.js.map

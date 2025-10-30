@@ -9,6 +9,7 @@ export interface ITimeSlot extends Document {
   specificDate?: Date; // For specific date overrides
   maxBookings: number;
   currentBookings: number;
+  ruleType?: 'all' | 'weekday' | 'specific';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,12 +45,17 @@ const TimeSlotSchema = new Schema<ITimeSlot>({
   maxBookings: {
     type: Number,
     default: 1,
-    min: 1
+    min: 0
   },
   currentBookings: {
     type: Number,
     default: 0,
     min: 0
+  },
+  ruleType: {
+    type: String,
+    enum: ['all', 'weekday', 'specific'],
+    default: undefined
   }
 }, {
   timestamps: true
@@ -58,5 +64,6 @@ const TimeSlotSchema = new Schema<ITimeSlot>({
 // Index for efficient queries
 TimeSlotSchema.index({ dayOfWeek: 1, isActive: 1 });
 TimeSlotSchema.index({ specificDate: 1, isActive: 1 });
+TimeSlotSchema.index({ ruleType: 1, dayOfWeek: 1 });
 
 export default mongoose.model<ITimeSlot>('TimeSlot', TimeSlotSchema);

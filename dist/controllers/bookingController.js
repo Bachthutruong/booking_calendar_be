@@ -14,8 +14,8 @@ const getAvailableTimeSlots = async (req, res) => {
         const { date } = req.params;
         const bookingDate = new Date(date);
         const dayOfWeek = bookingDate.getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
         let timeSlots = [];
+        console.log('[TimeSlots] Incoming request', { date, dayOfWeek });
         // Priority 1: Specific date slots (highest priority)
         const specificDateSlots = await TimeSlot_1.default.find({
             specificDate: {
@@ -24,36 +24,39 @@ const getAvailableTimeSlots = async (req, res) => {
             },
             isActive: true
         }).sort({ startTime: 1 });
+        console.log('[TimeSlots] Count specificDateSlots', { count: specificDateSlots.length });
         if (specificDateSlots.length > 0) {
             timeSlots = specificDateSlots;
         }
         else {
-            // Priority 2: Weekend slots (if it's weekend)
-            if (isWeekend) {
-                const weekendSlots = await TimeSlot_1.default.find({
-                    dayOfWeek,
-                    isWeekend: true,
-                    isActive: true
-                }).sort({ startTime: 1 });
-                if (weekendSlots.length > 0) {
-                    timeSlots = weekendSlots;
-                }
-                else {
-                    // Priority 3: All days slots (fallback)
-                    timeSlots = await TimeSlot_1.default.find({
-                        dayOfWeek,
-                        isWeekend: false,
-                        isActive: true
-                    }).sort({ startTime: 1 });
-                }
+            // Hard stop: if there is an explicit closed-day sentinel, return empty
+            const closedSentinel = await TimeSlot_1.default.countDocuments({ dayOfWeek, isActive: true, maxBookings: 0 });
+            if (closedSentinel > 0) {
+                console.log('[TimeSlots] Closed-day sentinel detected, returning empty', { dayOfWeek });
+                return res.json({ success: true, timeSlots: [] });
+            }
+            // Pre-calc counts for debug
+            const weekdayExplicitCountPre = await TimeSlot_1.default.countDocuments({ dayOfWeek, isActive: true, ruleType: 'weekday' });
+            const legacyCountPre = await TimeSlot_1.default.countDocuments({ dayOfWeek, isActive: true, ruleType: { $exists: false }, specificDate: { $exists: false } });
+            const allDaysCountPre = await TimeSlot_1.default.countDocuments({ dayOfWeek, isActive: true, ruleType: 'all' });
+            console.log('[TimeSlots] Counts', { weekdayExplicitCountPre, legacyCountPre, allDaysCountPre });
+            // Priority 2: Explicit weekday rules only (do NOT treat legacy as weekday)
+            const weekdayExplicitCount = await TimeSlot_1.default.countDocuments({ dayOfWeek, isActive: true, ruleType: 'weekday' });
+            if (weekdayExplicitCount > 0) {
+                timeSlots = await TimeSlot_1.default.find({ dayOfWeek, isActive: true, ruleType: 'weekday' }).sort({ startTime: 1 });
+                console.log('[TimeSlots] Using explicit weekday rules', { dayOfWeek, count: timeSlots.length });
             }
             else {
-                // Priority 3: All days slots (for weekdays)
-                timeSlots = await TimeSlot_1.default.find({
-                    dayOfWeek,
-                    isWeekend: false,
-                    isActive: true
-                }).sort({ startTime: 1 });
+                // Fallback: legacy (no ruleType) or explicit all-days
+                const legacy = await TimeSlot_1.default.find({ dayOfWeek, isActive: true, ruleType: { $exists: false } }).sort({ startTime: 1 });
+                if (legacy.length > 0) {
+                    timeSlots = legacy;
+                    console.log('[TimeSlots] Using legacy rules (treated as ALL)', { dayOfWeek, count: timeSlots.length });
+                }
+                else {
+                    timeSlots = await TimeSlot_1.default.find({ dayOfWeek, isActive: true, ruleType: 'all' }).sort({ startTime: 1 });
+                    console.log('[TimeSlots] Using all-days rules', { dayOfWeek, count: timeSlots.length });
+                }
             }
         }
         // Get existing bookings for the date
@@ -73,7 +76,8 @@ const getAvailableTimeSlots = async (req, res) => {
             };
         });
         // Filter available slots
-        const availableSlots = slotsWithBookings.filter(slot => slot.currentBookings < slot.maxBookings);
+        const availableSlots = slotsWithBookings.filter(slot => slot.maxBookings > 0 && slot.currentBookings < slot.maxBookings);
+        console.log('[TimeSlots] Available results', { dayOfWeek, total: availableSlots.length, times: availableSlots.map(s => `${s.startTime}-${s.endTime}`) });
         res.json({
             success: true,
             timeSlots: availableSlots.map(slot => ({
@@ -182,10 +186,10 @@ const createBooking = async (req, res) => {
 exports.createBooking = createBooking;
 const getBookings = async (req, res) => {
     try {
-        const { page = 1, limit = 10, status, date, search } = req.query;
+        const { page = 1, limit = 10, status, date, search, range } = req.query;
         const skip = (Number(page) - 1) * Number(limit);
         let filter = {};
-        if (status)
+        if (status && status !== 'all')
             filter.status = status;
         if (date) {
             const dateObj = new Date(date);
@@ -193,6 +197,20 @@ const getBookings = async (req, res) => {
                 $gte: new Date(dateObj.setHours(0, 0, 0, 0)),
                 $lt: new Date(dateObj.setHours(23, 59, 59, 999))
             };
+        }
+        // Range filter support
+        if (range === 'last7') {
+            const now = new Date();
+            const sevenDaysAgo = new Date(now);
+            sevenDaysAgo.setDate(now.getDate() - 7);
+            filter.bookingDate = {
+                ...(filter.bookingDate || {}),
+                $gte: new Date(sevenDaysAgo.setHours(0, 0, 0, 0))
+            };
+            // If no explicit status provided, default to confirmed in last7 range
+            if (!status || status === 'all') {
+                filter.status = 'confirmed';
+            }
         }
         // Add search functionality
         if (search) {
@@ -203,7 +221,8 @@ const getBookings = async (req, res) => {
             ];
         }
         const bookings = await Booking_1.default.find(filter)
-            .sort({ createdAt: -1 })
+            .sort({ bookingDate: -1, createdAt: -1 })
+            .populate('cancelledBy', 'name email')
             .skip(skip)
             .limit(Number(limit));
         const total = await Booking_1.default.countDocuments(filter);
@@ -228,7 +247,7 @@ exports.getBookings = getBookings;
 const getBookingById = async (req, res) => {
     try {
         const { id } = req.params;
-        const booking = await Booking_1.default.findById(id);
+        const booking = await Booking_1.default.findById(id).populate('cancelledBy', 'name email');
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
@@ -252,9 +271,9 @@ const updateBookingStatus = async (req, res) => {
         const previousStatus = booking.status;
         booking.status = status;
         await booking.save();
-        // Send confirmation email when status changes to 'confirmed'
+        // Khi xác nhận: gửi email cho user và cho các admin khác
         if (status === 'confirmed' && previousStatus !== 'confirmed') {
-            await (0, emailService_1.sendBookingConfirmationEmail)(booking);
+            await (0, emailService_1.sendBookingConfirmedEmails)(booking, req.userId);
         }
         res.json({
             success: true,
@@ -285,8 +304,8 @@ const cancelBooking = async (req, res) => {
         booking.cancelledAt = new Date();
         booking.cancellationReason = cancellationReason;
         await booking.save();
-        // Send cancellation email
-        await (0, emailService_1.sendBookingCancellationEmail)(booking, cancellationReason);
+        // Send cancellation email (notify other admins and the user)
+        await (0, emailService_1.sendBookingCancellationEmail)(booking, cancellationReason, req.userId);
         res.json({
             success: true,
             message: 'Booking cancelled successfully',

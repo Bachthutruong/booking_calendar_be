@@ -65,12 +65,17 @@ const TimeSlotSchema = new mongoose_1.Schema({
     maxBookings: {
         type: Number,
         default: 1,
-        min: 1
+        min: 0
     },
     currentBookings: {
         type: Number,
         default: 0,
         min: 0
+    },
+    ruleType: {
+        type: String,
+        enum: ['all', 'weekday', 'specific'],
+        default: undefined
     }
 }, {
     timestamps: true
@@ -78,5 +83,6 @@ const TimeSlotSchema = new mongoose_1.Schema({
 // Index for efficient queries
 TimeSlotSchema.index({ dayOfWeek: 1, isActive: 1 });
 TimeSlotSchema.index({ specificDate: 1, isActive: 1 });
+TimeSlotSchema.index({ ruleType: 1, dayOfWeek: 1 });
 exports.default = mongoose_1.default.model('TimeSlot', TimeSlotSchema);
 //# sourceMappingURL=TimeSlot.js.map

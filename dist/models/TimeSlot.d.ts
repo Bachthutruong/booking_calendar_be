@@ -8,6 +8,7 @@ export interface ITimeSlot extends Document {
     specificDate?: Date;
     maxBookings: number;
     currentBookings: number;
+    ruleType?: 'all' | 'weekday' | 'specific';
     createdAt: Date;
     updatedAt: Date;
 }

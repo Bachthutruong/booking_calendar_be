@@ -7,7 +7,13 @@
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
     "build": "tsc",
-    "test": "jest"
+    "test": "jest",
+    "seed:admins": "node scripts/seed-admins.js",
+    "test:email:service": "node test-email-service.js",
+    "test:email:final": "node test-final.js",
+    "test:resend": "node test-resend.js",
+    "test:cron": "node test-cron.js",
+    "test:email:flows": "node scripts/test-email-flows.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

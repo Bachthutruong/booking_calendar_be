@@ -61,13 +61,57 @@ const getSystemConfig = async (req, res) => {
             </ul>
             <p>Vui lòng liên hệ với chúng tôi nếu bạn muốn đặt lịch mới.</p>
             <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+          `,
+                    adminNewBookingSubject: "Đặt lịch mới cần xác nhận",
+                    adminNewBookingContent: `
+            <h2>Đặt lịch tư vấn mới</h2>
+            <p>Có một đặt lịch tư vấn mới cần được xác nhận:</p>
+            <ul>
+              <li><strong>Tên khách hàng:</strong> {{customerName}}</li>
+              <li><strong>Email:</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              {{#if notes}}<li><strong>Ghi chú:</strong> {{notes}}</li>{{/if}}
+            </ul>
+          `,
+                    adminBookingConfirmedSubject: "Lịch đã được xác nhận",
+                    adminBookingConfirmedContent: `
+            <h2>Lịch tư vấn đã được xác nhận</h2>
+            <p>Lịch với khách hàng {{customerName}} đã được xác nhận.</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+            </ul>
+          `,
+                    adminBookingCancelledSubject: "Lịch đã bị hủy",
+                    adminBookingCancelledContent: `
+            <h2>Lịch tư vấn đã bị hủy</h2>
+            <p>Lịch với khách hàng {{customerName}} đã bị hủy.</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+            </ul>
+          `,
+                    userBookingConfirmedSubject: "Lịch của bạn đã được xác nhận",
+                    userBookingConfirmedContent: `
+            <h2>Lịch tư vấn đã được xác nhận</h2>
+            <p>Xin chào {{customerName}},</p>
+            <p>Lịch tư vấn của bạn đã được xác nhận:</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+            </ul>
+            <p>Hẹn gặp bạn!</p>
           `
                 },
                 general: {
                     siteName: "Booking Calendar",
                     siteDescription: "Hệ thống đặt lịch tư vấn",
                     timezone: "Asia/Ho_Chi_Minh",
-                    reminderTime: "09:00"
+                    reminderTime: "09:00",
+                    reminderHoursBefore: 24
                 }
             };
             return res.json({
@@ -116,10 +160,112 @@ exports.updateSystemConfig = updateSystemConfig;
 const getAllSystemConfigs = async (req, res) => {
     try {
         const configs = await SystemConfig_1.default.find({ isActive: true });
+        // Default configs (mirror of getSystemConfig defaults)
+        const defaultConfigs = {
+            footer: {
+                companyName: "Booking Calendar",
+                companyDescription: "Hệ thống đặt lịch tư vấn thông minh và tiện lợi",
+                email: "info@bookingcalendar.com",
+                phone: "0123 456 789",
+                address: "123 Đường ABC, Quận 1, TP.HCM",
+                support: ["Hướng dẫn sử dụng", "FAQ", "Liên hệ hỗ trợ"]
+            },
+            email_template: {
+                bookingConfirmationSubject: "Xác nhận đặt lịch tư vấn",
+                bookingConfirmationContent: `
+            <h2>Xác nhận đặt lịch tư vấn</h2>
+            <p>Xin chào {{customerName}},</p>
+            <p>Chúng tôi đã nhận được yêu cầu đặt lịch tư vấn của bạn với thông tin sau:</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>Email:</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+            </ul>
+            <p>Chúng tôi sẽ liên hệ lại với bạn để xác nhận lịch hẹn.</p>
+            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+          `,
+                bookingReminderSubject: "Nhắc nhở lịch tư vấn",
+                bookingReminderContent: `
+            <h2>Nhắc nhở lịch tư vấn</h2>
+            <p>Xin chào {{customerName}},</p>
+            <p>Đây là email nhắc nhở về lịch tư vấn của bạn vào ngày mai:</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+            </ul>
+            <p>Vui lòng chuẩn bị sẵn sàng cho buổi tư vấn.</p>
+            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+          `,
+                bookingCancellationSubject: "Hủy lịch tư vấn",
+                bookingCancellationContent: `
+            <h2>Hủy lịch tư vấn</h2>
+            <p>Xin chào {{customerName}},</p>
+            <p>Lịch tư vấn của bạn đã bị hủy:</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+            </ul>
+            <p>Vui lòng liên hệ với chúng tôi nếu bạn muốn đặt lịch mới.</p>
+            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+          `,
+                adminNewBookingSubject: "Đặt lịch mới cần xác nhận",
+                adminNewBookingContent: `
+            <h2>Đặt lịch tư vấn mới</h2>
+            <p>Có một đặt lịch tư vấn mới cần được xác nhận:</p>
+            <ul>
+              <li><strong>Tên khách hàng:</strong> {{customerName}}</li>
+              <li><strong>Email:</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              {{#if notes}}<li><strong>Ghi chú:</strong> {{notes}}</li>{{/if}}
+            </ul>
+          `,
+                adminBookingConfirmedSubject: "Lịch đã được xác nhận",
+                adminBookingConfirmedContent: `
+            <h2>Lịch tư vấn đã được xác nhận</h2>
+            <p>Lịch với khách hàng {{customerName}} đã được xác nhận.</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+            </ul>
+          `,
+                adminBookingCancelledSubject: "Lịch đã bị hủy",
+                adminBookingCancelledContent: `
+            <h2>Lịch tư vấn đã bị hủy</h2>
+            <p>Lịch với khách hàng {{customerName}} đã bị hủy.</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+            </ul>
+          `,
+                userBookingConfirmedSubject: "Lịch của bạn đã được xác nhận",
+                userBookingConfirmedContent: `
+            <h2>Lịch tư vấn đã được xác nhận</h2>
+            <p>Xin chào {{customerName}},</p>
+            <p>Lịch tư vấn của bạn đã được xác nhận:</p>
+            <ul>
+              <li><strong>Ngày:</strong> {{bookingDate}}</li>
+              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+            </ul>
+            <p>Hẹn gặp bạn!</p>
+          `
+            },
+            general: {
+                siteName: "Booking Calendar",
+                siteDescription: "Hệ thống đặt lịch tư vấn",
+                timezone: "Asia/Ho_Chi_Minh",
+                reminderTime: "09:00",
+                reminderHoursBefore: 24
+            }
+        };
         const result = {
-            footer: configs.find(c => c.type === 'footer')?.config || {},
-            email_template: configs.find(c => c.type === 'email_template')?.config || {},
-            general: configs.find(c => c.type === 'general')?.config || {}
+            footer: { ...defaultConfigs.footer, ...(configs.find(c => c.type === 'footer')?.config || {}) },
+            email_template: { ...defaultConfigs.email_template, ...(configs.find(c => c.type === 'email_template')?.config || {}) },
+            general: { ...defaultConfigs.general, ...(configs.find(c => c.type === 'general')?.config || {}) }
         };
         res.json({
             success: true,

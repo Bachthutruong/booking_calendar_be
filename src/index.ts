@@ -16,6 +16,7 @@ import cronRoutes from './routes/cron';
 // Import services
 import { sendBookingReminderEmail } from './utils/emailService';
 import Booking from './models/Booking';
+import SystemConfig from './models/SystemConfig';
 
 // Load environment variables
 dotenv.config();
@@ -91,8 +92,26 @@ app.use('*', (req, res) => {
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI!)
-  .then(() => {
+  .then(async () => {
     console.log('Connected to MongoDB');
+    // Ensure default general config exists
+    try {
+      const hasGeneral = await SystemConfig.findOne({ type: 'general' });
+      if (!hasGeneral) {
+        await SystemConfig.create({
+          type: 'general',
+          config: {
+            timezone: 'Asia/Ho_Chi_Minh',
+            reminderHoursBefore: 24,
+            reminderTime: ''
+          },
+          isActive: true
+        });
+        console.log('Inserted default general config (reminderHoursBefore=24)');
+      }
+    } catch (e) {
+      console.error('Failed to ensure default general config:', e);
+    }
     
     // Start server
     app.listen(PORT, () => {
@@ -105,44 +124,48 @@ mongoose.connect(process.env.MONGODB_URI!)
     process.exit(1);
   });
 
-// Setup reminder cron job (runs daily at 9 AM)
-const reminderJob = new CronJob('0 9 * * *', async () => {
+// Setup reminder cron job (runs every minute, checks reminderHoursBefore; default 24h)
+const reminderJob = new CronJob('*/1 * * * *', async () => {
   try {
-    console.log('Running reminder job...');
-    
-    // Get tomorrow's date
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    
-    const endOfTomorrow = new Date(tomorrow);
-    endOfTomorrow.setHours(23, 59, 59, 999);
-    
-    // Find bookings for tomorrow that haven't had reminders sent
-    const bookings = await Booking.find({
-      bookingDate: {
-        $gte: tomorrow,
-        $lte: endOfTomorrow
-      },
-      status: { $in: ['pending', 'confirmed'] },
+    // Load reminderHoursBefore from config (default 24)
+    const generalCfg = await SystemConfig.findOne({ type: 'general', isActive: true });
+    const reminderHours = Number((generalCfg?.config as any)?.reminderHoursBefore ?? 24);
+    const now = new Date();
+    const target = new Date(now.getTime() + reminderHours * 60 * 60 * 1000);
+
+    const startOfTargetDay = new Date(target);
+    startOfTargetDay.setHours(0, 0, 0, 0);
+    const endOfTargetDay = new Date(target);
+    endOfTargetDay.setHours(23, 59, 59, 999);
+
+    const dayBookings = await Booking.find({
+      bookingDate: { $gte: startOfTargetDay, $lt: endOfTargetDay },
+      status: 'confirmed',
       reminderSent: { $ne: true }
     });
-    
-    console.log(`Found ${bookings.length} bookings for reminder`);
-    
-    // Send reminder emails
-    for (const booking of bookings) {
+
+    let sent = 0;
+    for (const booking of dayBookings) {
       try {
-        await sendBookingReminderEmail(booking);
-        // Mark as reminder sent
-        await Booking.findByIdAndUpdate(booking._id, { reminderSent: true });
-        console.log(`Sent reminder for booking ${booking._id}`);
-      } catch (emailError) {
-        console.error(`Failed to send reminder for booking ${booking._id}:`, emailError);
+        const startStr = String(booking.timeSlot).split('-')[0];
+        const [h, m] = startStr.split(':').map((x: string) => parseInt(x, 10));
+        const bookingStart = new Date(booking.bookingDate);
+        bookingStart.setHours(h || 0, m || 0, 0, 0);
+        const diffMs = Math.abs(bookingStart.getTime() - target.getTime());
+        const withinWindow = diffMs <= 5 * 60 * 1000; // 5-minute window
+        if (withinWindow) {
+          await sendBookingReminderEmail(booking);
+          await Booking.findByIdAndUpdate(booking._id, { reminderSent: true });
+          sent++;
+          console.log('Reminder sent (auto)', { id: String(booking._id), bookingStart, target });
+        }
+      } catch (err) {
+        console.error('Auto reminder failed', { id: String(booking._id) }, err);
       }
     }
-    
-    console.log(`Sent ${bookings.length} reminder emails`);
+    if (sent > 0) {
+      console.log(`Auto reminder job: sent ${sent} email(s)`);
+    }
   } catch (error) {
     console.error('Reminder job error:', error);
   }

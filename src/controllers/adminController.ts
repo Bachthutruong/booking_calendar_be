@@ -31,7 +31,7 @@ export const createTimeSlot = async (req: Request, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { type, timeSlots, specificDate, maxBookings, isActive } = req.body;
+    const { type, timeSlots, specificDate, maxBookings, isActive, dayOfWeek } = req.body;
     const createdSlots = [];
 
     // Create time slots based on type
@@ -46,31 +46,31 @@ export const createTimeSlot = async (req: Request, res: Response) => {
           isWeekend: false,
           specificDate: new Date(specificDate),
           maxBookings,
-          currentBookings: 0
+          currentBookings: 0,
+          ruleType: 'specific'
         });
         await timeSlot.save();
         createdSlots.push(timeSlot);
       }
-    } else if (type === 'weekend') {
-      // Create slots for weekend (Saturday and Sunday)
-      for (const dayOfWeek of [0, 6]) { // Sunday and Saturday
-        for (const slot of timeSlots) {
-          const timeSlot = new TimeSlot({
-            dayOfWeek,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            isActive,
-            isWeekend: true,
-            maxBookings,
-            currentBookings: 0
-          });
-          await timeSlot.save();
-          createdSlots.push(timeSlot);
-        }
+    } else if (type === 'weekday') {
+      // Create slots for a specific weekday (0-6). If timeSlots is empty, create a closed-day sentinel.
+      if (dayOfWeek === undefined || dayOfWeek === null) {
+        return res.status(400).json({ message: 'dayOfWeek is required for weekday type' });
       }
-    } else {
-      // Create slots for all days (Monday to Sunday)
-      for (const dayOfWeek of [1, 2, 3, 4, 5, 6, 0]) { // Monday to Sunday
+      if (!timeSlots || timeSlots.length === 0) {
+        const timeSlot = new TimeSlot({
+          dayOfWeek,
+          startTime: '00:00',
+          endTime: '00:00',
+          isActive: true,
+          isWeekend: false,
+          maxBookings: 0,
+          currentBookings: 0,
+          ruleType: 'weekday'
+        });
+        await timeSlot.save();
+        createdSlots.push(timeSlot);
+      } else {
         for (const slot of timeSlots) {
           const timeSlot = new TimeSlot({
             dayOfWeek,
@@ -79,10 +79,47 @@ export const createTimeSlot = async (req: Request, res: Response) => {
             isActive,
             isWeekend: false,
             maxBookings,
-            currentBookings: 0
+            currentBookings: 0,
+            ruleType: 'weekday'
           });
           await timeSlot.save();
           createdSlots.push(timeSlot);
+        }
+      }
+    } else {
+      // Create slots for all days (Monday to Sunday). If empty, create closed-day sentinels for all days.
+      const days = [1, 2, 3, 4, 5, 6, 0]
+      if (!timeSlots || timeSlots.length === 0) {
+        for (const d of days) {
+          const timeSlot = new TimeSlot({
+            dayOfWeek: d,
+            startTime: '00:00',
+            endTime: '00:00',
+            isActive: true,
+            isWeekend: false,
+            maxBookings: 0,
+            currentBookings: 0,
+            ruleType: 'all'
+          });
+          await timeSlot.save();
+          createdSlots.push(timeSlot);
+        }
+      } else {
+        for (const d of days) {
+          for (const slot of timeSlots) {
+            const timeSlot = new TimeSlot({
+              dayOfWeek: d,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+              isActive,
+              isWeekend: false,
+              maxBookings,
+              currentBookings: 0,
+              ruleType: 'all'
+            });
+            await timeSlot.save();
+            createdSlots.push(timeSlot);
+          }
         }
       }
     }
@@ -309,8 +346,8 @@ export const updateUser = async (req: Request, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { id } = req.params;
-    const { email, name, role, phone, isActive } = req.body;
+  const { id } = req.params;
+  const { email, name, role, phone, isActive, password } = req.body;
 
     const user = await User.findById(id);
     if (!user) {
@@ -325,11 +362,13 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
-    if (email) user.email = email;
-    if (name) user.name = name;
-    if (role) user.role = role;
-    if (phone !== undefined) user.phone = phone;
-    if (isActive !== undefined) user.isActive = isActive;
+  if (email) user.email = email;
+  if (name) user.name = name;
+  if (role) user.role = role;
+  if (phone !== undefined) user.phone = phone;
+  if (isActive !== undefined) user.isActive = isActive;
+  // If password provided and passed validation, update it (pre-save hook will hash)
+  if (password) user.password = password;
 
     await user.save();
 

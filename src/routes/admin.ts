@@ -24,11 +24,13 @@ router.use(authorize('admin'));
 
 // Time slots validation
 const timeSlotValidation = [
-  body('type').isIn(['all', 'weekend', 'specific']),
-  body('timeSlots').isArray().notEmpty(),
-  body('timeSlots.*.startTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
-  body('timeSlots.*.endTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
-  body('maxBookings').isInt({ min: 1 }),
+  body('type').isIn(['all', 'weekday', 'specific']),
+  // timeSlots can be empty to mean no availability that day
+  body('timeSlots').isArray(),
+  body('timeSlots.*.startTime').optional().matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  body('timeSlots.*.endTime').optional().matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  body('dayOfWeek').optional().isInt({ min: 0, max: 6 }),
+  body('maxBookings').isInt({ min: 0 }),
   body('isActive').isBoolean(),
   body('specificDate').optional().isISO8601()
 ];
@@ -45,12 +47,24 @@ const customFieldValidation = [
 ];
 
 // User validation
-const userValidation = [
+const createUserValidation = [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
   body('name').notEmpty().trim(),
-  body('role').isIn(['admin', 'staff', 'customer']),
-  body('phone').optional().isMobilePhone('vi-VN')
+  body('role').isIn(['admin', 'staff']),
+  // Allow any phone string (or omit)
+  body('phone').optional().trim()
+];
+
+const updateUserValidation = [
+  body('email').optional().isEmail().normalizeEmail(),
+  // Password not editable via this route unless explicitly provided and valid
+  body('password').optional().isLength({ min: 6 }),
+  body('name').optional().notEmpty().trim(),
+  body('role').optional().isIn(['admin', 'staff']),
+  // Allow any phone string (or omit)
+  body('phone').optional().trim(),
+  body('isActive').optional().isBoolean()
 ];
 
 // Time slots routes
@@ -67,8 +81,8 @@ router.delete('/custom-fields/:id', deleteCustomField);
 
 // Users routes
 router.get('/users', getUsers);
-router.post('/users', userValidation, createUser);
-router.put('/users/:id', userValidation, updateUser);
+router.post('/users', createUserValidation, createUser);
+router.put('/users/:id', updateUserValidation, updateUser);
 router.delete('/users/:id', deleteUser);
 
 export default router;
