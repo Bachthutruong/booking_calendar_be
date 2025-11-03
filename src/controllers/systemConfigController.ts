@@ -13,100 +13,100 @@ export const getSystemConfig = async (req: Request, res: Response) => {
       const defaultConfigs = {
         footer: {
           companyName: "Booking Calendar",
-          companyDescription: "Hệ thống đặt lịch tư vấn thông minh và tiện lợi",
+          companyDescription: "智慧且便利的諮詢預約系統",
           email: "info@bookingcalendar.com",
           phone: "0123 456 789",
-          address: "123 Đường ABC, Quận 1, TP.HCM",
-          services: ["Đặt lịch tư vấn", "Hỗ trợ 24/7", "Báo cáo tự động"],
-          support: ["Hướng dẫn sử dụng", "FAQ", "Liên hệ hỗ trợ"]
+          address: "越南胡志明市第一郡 ABC 路 123 號",
+          services: ["諮詢預約", "24/7 支援", "自動化報告"],
+          support: ["使用指南", "FAQ", "聯絡支援"]
         },
         email_template: {
-          bookingConfirmationSubject: "Xác nhận đặt lịch tư vấn",
+          bookingConfirmationSubject: "諮詢預約確認",
           bookingConfirmationContent: `
-            <h2>Xác nhận đặt lịch tư vấn</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Chúng tôi đã nhận được yêu cầu đặt lịch tư vấn của bạn với thông tin sau:</p>
+            <h2>諮詢預約確認</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>我們已收到您的諮詢預約，詳細資訊如下：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              <li><strong>Email:</strong> {{customerEmail}}</li>
-              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              <li><strong>Email：</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>電話：</strong> {{customerPhone}}</li>{{/if}}
             </ul>
-            <p>Chúng tôi sẽ liên hệ lại với bạn để xác nhận lịch hẹn.</p>
-            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+            <p>我們將與您聯繫以確認行程。</p>
+            <p>敬上，<br>諮詢團隊</p>
           `,
-          bookingReminderSubject: "Nhắc nhở lịch tư vấn",
+          bookingReminderSubject: "諮詢預約提醒",
           bookingReminderContent: `
-            <h2>Nhắc nhở lịch tư vấn</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Đây là email nhắc nhở về lịch tư vấn của bạn vào ngày mai:</p>
+            <h2>諮詢預約提醒</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>這是提醒您明日的諮詢預約：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
             </ul>
-            <p>Vui lòng chuẩn bị sẵn sàng cho buổi tư vấn.</p>
-            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+            <p>請準備好相關資訊以利諮詢順利進行。</p>
+            <p>敬上，<br>諮詢團隊</p>
           `,
-          bookingCancellationSubject: "Hủy lịch tư vấn",
+          bookingCancellationSubject: "取消諮詢預約",
           bookingCancellationContent: `
-            <h2>Hủy lịch tư vấn</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Lịch tư vấn của bạn đã bị hủy:</p>
+            <h2>取消諮詢預約</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>您的諮詢預約已被取消：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>取消原因：</strong> {{cancellationReason}}</li>{{/if}}
             </ul>
-            <p>Vui lòng liên hệ với chúng tôi nếu bạn muốn đặt lịch mới.</p>
-            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+            <p>若您想重新預約，請與我們聯繫。</p>
+            <p>敬上，<br>諮詢團隊</p>
           `,
-          adminNewBookingSubject: "Đặt lịch mới cần xác nhận",
+          adminNewBookingSubject: "新預約待確認",
           adminNewBookingContent: `
-            <h2>Đặt lịch tư vấn mới</h2>
-            <p>Có một đặt lịch tư vấn mới cần được xác nhận:</p>
+            <h2>新的諮詢預約</h2>
+            <p>有一筆新的諮詢預約等待確認：</p>
             <ul>
-              <li><strong>Tên khách hàng:</strong> {{customerName}}</li>
-              <li><strong>Email:</strong> {{customerEmail}}</li>
-              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              {{#if notes}}<li><strong>Ghi chú:</strong> {{notes}}</li>{{/if}}
+              <li><strong>客戶姓名：</strong> {{customerName}}</li>
+              <li><strong>Email：</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>電話：</strong> {{customerPhone}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              {{#if notes}}<li><strong>備註：</strong> {{notes}}</li>{{/if}}
             </ul>
           `,
-          adminBookingConfirmedSubject: "Lịch đã được xác nhận",
+          adminBookingConfirmedSubject: "預約已確認",
           adminBookingConfirmedContent: `
-            <h2>Lịch tư vấn đã được xác nhận</h2>
-            <p>Lịch với khách hàng {{customerName}} đã được xác nhận.</p>
+            <h2>諮詢預約已確認</h2>
+            <p>與客戶 {{customerName}} 的行程已確認。</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
             </ul>
           `,
-          adminBookingCancelledSubject: "Lịch đã bị hủy",
+          adminBookingCancelledSubject: "預約已取消",
           adminBookingCancelledContent: `
-            <h2>Lịch tư vấn đã bị hủy</h2>
-            <p>Lịch với khách hàng {{customerName}} đã bị hủy.</p>
+            <h2>諮詢預約已取消</h2>
+            <p>與客戶 {{customerName}} 的行程已取消。</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>取消原因：</strong> {{cancellationReason}}</li>{{/if}}
             </ul>
           `,
-          userBookingConfirmedSubject: "Lịch của bạn đã được xác nhận",
+          userBookingConfirmedSubject: "您的預約已確認",
           userBookingConfirmedContent: `
-            <h2>Lịch tư vấn đã được xác nhận</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Lịch tư vấn của bạn đã được xác nhận:</p>
+            <h2>諮詢預約已確認</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>您的諮詢預約已確認：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
             </ul>
-            <p>Hẹn gặp bạn!</p>
+            <p>期待與您見面！</p>
           `
         },
         general: {
           siteName: "Booking Calendar",
-          siteDescription: "Hệ thống đặt lịch tư vấn",
+          siteDescription: "諮詢預約系統",
           timezone: "Asia/Ho_Chi_Minh",
           reminderTime: "09:00",
           reminderHoursBefore: 24
@@ -167,99 +167,99 @@ export const getAllSystemConfigs = async (req: Request, res: Response) => {
     const defaultConfigs = {
       footer: {
         companyName: "Booking Calendar",
-        companyDescription: "Hệ thống đặt lịch tư vấn thông minh và tiện lợi",
+        companyDescription: "智慧且便利的諮詢預約系統",
         email: "info@bookingcalendar.com",
         phone: "0123 456 789",
-        address: "123 Đường ABC, Quận 1, TP.HCM",
-        support: ["Hướng dẫn sử dụng", "FAQ", "Liên hệ hỗ trợ"]
+        address: "越南胡志明市第一郡 ABC 路 123 號",
+        support: ["使用指南", "FAQ", "聯絡支援"]
       },
       email_template: {
-        bookingConfirmationSubject: "Xác nhận đặt lịch tư vấn",
+        bookingConfirmationSubject: "諮詢預約確認",
         bookingConfirmationContent: `
-            <h2>Xác nhận đặt lịch tư vấn</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Chúng tôi đã nhận được yêu cầu đặt lịch tư vấn của bạn với thông tin sau:</p>
+            <h2>諮詢預約確認</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>我們已收到您的諮詢預約，詳細資訊如下：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              <li><strong>Email:</strong> {{customerEmail}}</li>
-              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              <li><strong>Email：</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>電話：</strong> {{customerPhone}}</li>{{/if}}
             </ul>
-            <p>Chúng tôi sẽ liên hệ lại với bạn để xác nhận lịch hẹn.</p>
-            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+            <p>我們將與您聯繫以確認行程。</p>
+            <p>敬上，<br>諮詢團隊</p>
           `,
-        bookingReminderSubject: "Nhắc nhở lịch tư vấn",
+        bookingReminderSubject: "諮詢預約提醒",
         bookingReminderContent: `
-            <h2>Nhắc nhở lịch tư vấn</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Đây là email nhắc nhở về lịch tư vấn của bạn vào ngày mai:</p>
+            <h2>諮詢預約提醒</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>這是提醒您明日的諮詢預約：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
             </ul>
-            <p>Vui lòng chuẩn bị sẵn sàng cho buổi tư vấn.</p>
-            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+            <p>請準備好相關資訊以利諮詢順利進行。</p>
+            <p>敬上，<br>諮詢團隊</p>
           `,
-        bookingCancellationSubject: "Hủy lịch tư vấn",
+        bookingCancellationSubject: "取消諮詢預約",
         bookingCancellationContent: `
-            <h2>Hủy lịch tư vấn</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Lịch tư vấn của bạn đã bị hủy:</p>
+            <h2>取消諮詢預約</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>您的諮詢預約已被取消：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>取消原因：</strong> {{cancellationReason}}</li>{{/if}}
             </ul>
-            <p>Vui lòng liên hệ với chúng tôi nếu bạn muốn đặt lịch mới.</p>
-            <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+            <p>若您想重新預約，請與我們聯繫。</p>
+            <p>敬上，<br>諮詢團隊</p>
           `,
-        adminNewBookingSubject: "Đặt lịch mới cần xác nhận",
+        adminNewBookingSubject: "新預約待確認",
         adminNewBookingContent: `
-            <h2>Đặt lịch tư vấn mới</h2>
-            <p>Có một đặt lịch tư vấn mới cần được xác nhận:</p>
+            <h2>新的諮詢預約</h2>
+            <p>有一筆新的諮詢預約等待確認：</p>
             <ul>
-              <li><strong>Tên khách hàng:</strong> {{customerName}}</li>
-              <li><strong>Email:</strong> {{customerEmail}}</li>
-              {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              {{#if notes}}<li><strong>Ghi chú:</strong> {{notes}}</li>{{/if}}
+              <li><strong>客戶姓名：</strong> {{customerName}}</li>
+              <li><strong>Email：</strong> {{customerEmail}}</li>
+              {{#if customerPhone}}<li><strong>電話：</strong> {{customerPhone}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              {{#if notes}}<li><strong>備註：</strong> {{notes}}</li>{{/if}}
             </ul>
           `,
-        adminBookingConfirmedSubject: "Lịch đã được xác nhận",
+        adminBookingConfirmedSubject: "預約已確認",
         adminBookingConfirmedContent: `
-            <h2>Lịch tư vấn đã được xác nhận</h2>
-            <p>Lịch với khách hàng {{customerName}} đã được xác nhận.</p>
+            <h2>諮詢預約已確認</h2>
+            <p>與客戶 {{customerName}} 的行程已確認。</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
             </ul>
           `,
-        adminBookingCancelledSubject: "Lịch đã bị hủy",
+        adminBookingCancelledSubject: "預約已取消",
         adminBookingCancelledContent: `
-            <h2>Lịch tư vấn đã bị hủy</h2>
-            <p>Lịch với khách hàng {{customerName}} đã bị hủy.</p>
+            <h2>諮詢預約已取消</h2>
+            <p>與客戶 {{customerName}} 的行程已取消。</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
-              {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
+              {{#if cancellationReason}}<li><strong>取消原因：</strong> {{cancellationReason}}</li>{{/if}}
             </ul>
           `,
-        userBookingConfirmedSubject: "Lịch của bạn đã được xác nhận",
+        userBookingConfirmedSubject: "您的預約已確認",
         userBookingConfirmedContent: `
-            <h2>Lịch tư vấn đã được xác nhận</h2>
-            <p>Xin chào {{customerName}},</p>
-            <p>Lịch tư vấn của bạn đã được xác nhận:</p>
+            <h2>諮詢預約已確認</h2>
+            <p>您好 {{customerName}}，</p>
+            <p>您的諮詢預約已確認：</p>
             <ul>
-              <li><strong>Ngày:</strong> {{bookingDate}}</li>
-              <li><strong>Giờ:</strong> {{timeSlot}}</li>
+              <li><strong>日期：</strong> {{bookingDate}}</li>
+              <li><strong>時間：</strong> {{timeSlot}}</li>
             </ul>
-            <p>Hẹn gặp bạn!</p>
+            <p>期待與您見面！</p>
           `
       },
       general: {
         siteName: "Booking Calendar",
-        siteDescription: "Hệ thống đặt lịch tư vấn",
+        siteDescription: "諮詢預約系統",
         timezone: "Asia/Ho_Chi_Minh",
         reminderTime: "09:00",
         reminderHoursBefore: 24

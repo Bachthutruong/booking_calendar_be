@@ -10,7 +10,7 @@ const registerValidation = [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
   body('name').notEmpty().trim(),
-  body('phone').optional().isMobilePhone('vi-VN')
+  body('phone').optional().isMobilePhone('zh-TW')
 ];
 
 const loginValidation = [
@@ -20,7 +20,7 @@ const loginValidation = [
 
 const updateProfileValidation = [
   body('name').optional().notEmpty().trim(),
-  body('phone').optional().isMobilePhone('vi-VN')
+  body('phone').optional().isMobilePhone('zh-TW')
 ];
 
 const changePasswordValidation = [
