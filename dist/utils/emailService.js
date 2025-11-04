@@ -7,96 +7,96 @@ exports.sendBookingConfirmedEmails = exports.sendBookingCancellationEmail = expo
 const resend_1 = require("resend");
 const User_1 = __importDefault(require("../models/User"));
 const SystemConfig_1 = __importDefault(require("../models/SystemConfig"));
-// Kiểm tra cấu hình email
+// 檢查電子郵件設定
 const isEmailConfigured = () => {
     return process.env.RESEND_API_KEY || 're_QqaMiRDg_97ff4nmbPHUFRrC2ghLAoU5R';
 };
 const resend = isEmailConfigured() ? new resend_1.Resend(process.env.RESEND_API_KEY || 're_QqaMiRDg_97ff4nmbPHUFRrC2ghLAoU5R') : null;
 const getEmailTemplate = async (type) => {
-    // Default templates - không cần MongoDB
+    // 預設模板（不需要 MongoDB）
     const defaultTemplates = {
-        bookingConfirmationSubject: 'Xác nhận đặt lịch tư vấn',
+        bookingConfirmationSubject: '諮詢預約確認',
         bookingConfirmationContent: `
-      <h2>Xác nhận đặt lịch tư vấn</h2>
-      <p>Xin chào {{customerName}},</p>
-      <p>Chúng tôi đã nhận được yêu cầu đặt lịch tư vấn của bạn với thông tin sau:</p>
+      <h2>諮詢預約確認</h2>
+      <p>您好 {{customerName}}，</p>
+      <p>我們已收到您的諮詢預約，詳細資訊如下：</p>
       <ul>
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
-        <li><strong>Email:</strong> {{customerEmail}}</li>
-        {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
+        <li><strong>Email：</strong> {{customerEmail}}</li>
+        {{#if customerPhone}}<li><strong>電話：</strong> {{customerPhone}}</li>{{/if}}
       </ul>
-      <p>Chúng tôi sẽ liên hệ lại với bạn để xác nhận lịch hẹn.</p>
-      <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+      <p>我們將與您聯繫以確認行程。</p>
+      <p>敬上，<br>諮詢團隊</p>
     `,
-        bookingReminderSubject: 'Nhắc nhở lịch tư vấn',
+        bookingReminderSubject: '諮詢預約提醒',
         bookingReminderContent: `
-      <h2>Nhắc nhở lịch tư vấn</h2>
-      <p>Xin chào {{customerName}},</p>
-      <p>Đây là email nhắc nhở về lịch tư vấn của bạn vào ngày mai:</p>
+      <h2>諮詢預約提醒</h2>
+      <p>您好 {{customerName}}，</p>
+      <p>這是提醒您明日的諮詢預約：</p>
       <ul>
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
       </ul>
-      <p>Vui lòng chuẩn bị sẵn sàng cho buổi tư vấn.</p>
-      <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+      <p>請準備好相關資訊以利諮詢順利進行。</p>
+      <p>敬上，<br>諮詢團隊</p>
     `,
-        bookingCancellationSubject: 'Hủy lịch tư vấn',
+        bookingCancellationSubject: '取消諮詢預約',
         bookingCancellationContent: `
-      <h2>Hủy lịch tư vấn</h2>
-      <p>Xin chào {{customerName}},</p>
-      <p>Lịch tư vấn của bạn đã bị hủy:</p>
+      <h2>取消諮詢預約</h2>
+      <p>您好 {{customerName}}，</p>
+      <p>您的諮詢預約已被取消：</p>
       <ul>
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
-        {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
+        {{#if cancellationReason}}<li><strong>取消原因：</strong> {{cancellationReason}}</li>{{/if}}
       </ul>
-      <p>Vui lòng liên hệ với chúng tôi nếu bạn muốn đặt lịch mới.</p>
-      <p>Trân trọng,<br>Đội ngũ tư vấn</p>
+      <p>若您想重新預約，請與我們聯繫。</p>
+      <p>敬上，<br>諮詢團隊</p>
    `,
         // Admin defaults
-        adminNewBookingSubject: 'Đặt lịch mới cần xác nhận',
+        adminNewBookingSubject: '新預約待確認',
         adminNewBookingContent: `
-      <h2>Đặt lịch tư vấn mới</h2>
-      <p>Có một đặt lịch tư vấn mới cần được xác nhận:</p>
+      <h2>新的諮詢預約</h2>
+      <p>有一筆新的諮詢預約等待確認：</p>
       <ul>
-        <li><strong>Tên khách hàng:</strong> {{customerName}}</li>
-        <li><strong>Email:</strong> {{customerEmail}}</li>
-        {{#if customerPhone}}<li><strong>Số điện thoại:</strong> {{customerPhone}}</li>{{/if}}
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
-        {{#if notes}}<li><strong>Ghi chú:</strong> {{notes}}</li>{{/if}}
+        <li><strong>客戶姓名：</strong> {{customerName}}</li>
+        <li><strong>Email：</strong> {{customerEmail}}</li>
+        {{#if customerPhone}}<li><strong>電話：</strong> {{customerPhone}}</li>{{/if}}
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
+        {{#if notes}}<li><strong>備註：</strong> {{notes}}</li>{{/if}}
       </ul>
     `,
-        adminBookingConfirmedSubject: 'Lịch đã được xác nhận',
+        adminBookingConfirmedSubject: '預約已確認',
         adminBookingConfirmedContent: `
-      <h2>Lịch tư vấn đã được xác nhận</h2>
-      <p>Lịch với khách hàng {{customerName}} đã được xác nhận.</p>
+      <h2>諮詢預約已確認</h2>
+      <p>與客戶 {{customerName}} 的行程已確認。</p>
       <ul>
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
       </ul>
     `,
-        adminBookingCancelledSubject: 'Lịch đã bị hủy',
+        adminBookingCancelledSubject: '預約已取消',
         adminBookingCancelledContent: `
-      <h2>Lịch tư vấn đã bị hủy</h2>
-      <p>Lịch với khách hàng {{customerName}} đã bị hủy.</p>
+      <h2>諮詢預約已取消</h2>
+      <p>與客戶 {{customerName}} 的行程已取消。</p>
       <ul>
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
-        {{#if cancellationReason}}<li><strong>Lý do hủy:</strong> {{cancellationReason}}</li>{{/if}}
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
+        {{#if cancellationReason}}<li><strong>取消原因：</strong> {{cancellationReason}}</li>{{/if}}
       </ul>
     `,
-        userBookingConfirmedSubject: 'Lịch của bạn đã được xác nhận',
+        userBookingConfirmedSubject: '您的預約已確認',
         userBookingConfirmedContent: `
-      <h2>Lịch tư vấn đã được xác nhận</h2>
-      <p>Xin chào {{customerName}},</p>
-      <p>Lịch tư vấn của bạn đã được xác nhận:</p>
+      <h2>諮詢預約已確認</h2>
+      <p>您好 {{customerName}}，</p>
+      <p>您的諮詢預約已確認：</p>
       <ul>
-        <li><strong>Ngày:</strong> {{bookingDate}}</li>
-        <li><strong>Giờ:</strong> {{timeSlot}}</li>
+        <li><strong>日期：</strong> {{bookingDate}}</li>
+        <li><strong>時間：</strong> {{timeSlot}}</li>
       </ul>
-      <p>Hẹn gặp bạn!</p>
+      <p>期待與您見面！</p>
     `
     };
     // Try load from DB config overrides
@@ -124,7 +124,7 @@ const replaceTemplateVariables = (template, variables) => {
 const sendBookingConfirmationEmail = async (booking) => {
     try {
         if (!isEmailConfigured() || !resend) {
-            console.log('Email không được cấu hình. Bỏ qua gửi email xác nhận.');
+            console.log('電子郵件未設定，略過發送確認郵件。');
             return;
         }
         const subject = await getEmailTemplate('bookingConfirmationSubject');
@@ -133,7 +133,7 @@ const sendBookingConfirmationEmail = async (booking) => {
             customerName: booking.customerName,
             customerEmail: booking.customerEmail,
             customerPhone: booking.customerPhone,
-            bookingDate: new Date(booking.bookingDate).toLocaleDateString('vi-VN'),
+            bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
             timeSlot: booking.timeSlot
         };
         const customerEmailHtml = replaceTemplateVariables(content, variables);
@@ -156,11 +156,11 @@ const sendBookingConfirmationEmail = async (booking) => {
             await resend.emails.send({
                 from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
                 to: adminEmails,
-                subject: adminSubject || 'Đặt lịch tư vấn mới',
+                subject: adminSubject || '新的諮詢預約',
                 html: adminHtml
             });
         }
-        console.log('Email xác nhận đã được gửi thành công qua Resend');
+        console.log('確認郵件已透過 Resend 成功寄出');
     }
     catch (error) {
         console.error('Send booking confirmation email error:', error);
@@ -170,7 +170,7 @@ exports.sendBookingConfirmationEmail = sendBookingConfirmationEmail;
 const sendBookingReminderEmail = async (booking) => {
     try {
         if (!isEmailConfigured() || !resend) {
-            console.log('Email không được cấu hình. Bỏ qua gửi email nhắc nhở.');
+            console.log('電子郵件未設定，略過發送提醒郵件。');
             return;
         }
         const subject = await getEmailTemplate('bookingReminderSubject');
@@ -179,7 +179,7 @@ const sendBookingReminderEmail = async (booking) => {
             customerName: booking.customerName,
             customerEmail: booking.customerEmail,
             customerPhone: booking.customerPhone,
-            bookingDate: new Date(booking.bookingDate).toLocaleDateString('vi-VN'),
+            bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
             timeSlot: booking.timeSlot
         };
         const customerEmailHtml = replaceTemplateVariables(content, variables);
@@ -211,7 +211,7 @@ exports.sendBookingReminderEmail = sendBookingReminderEmail;
 const sendBookingCancellationEmail = async (booking, cancellationReason, excludeAdminId) => {
     try {
         if (!isEmailConfigured() || !resend) {
-            console.log('Email không được cấu hình. Bỏ qua gửi email hủy lịch.');
+            console.log('電子郵件未設定，略過發送取消郵件。');
             return;
         }
         const subject = await getEmailTemplate('bookingCancellationSubject');
@@ -220,7 +220,7 @@ const sendBookingCancellationEmail = async (booking, cancellationReason, exclude
             customerName: booking.customerName,
             customerEmail: booking.customerEmail,
             customerPhone: booking.customerPhone,
-            bookingDate: new Date(booking.bookingDate).toLocaleDateString('vi-VN'),
+            bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
             timeSlot: booking.timeSlot,
             cancellationReason: cancellationReason
         };
@@ -247,7 +247,7 @@ const sendBookingCancellationEmail = async (booking, cancellationReason, exclude
             await resend.emails.send({
                 from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
                 to: adminEmails,
-                subject: adminSubject || 'Hủy lịch tư vấn',
+                subject: adminSubject || '取消諮詢預約',
                 html: adminHtml
             });
         }
@@ -260,14 +260,14 @@ exports.sendBookingCancellationEmail = sendBookingCancellationEmail;
 const sendBookingConfirmedEmails = async (booking, actorAdminId) => {
     try {
         if (!isEmailConfigured() || !resend) {
-            console.log('Email không được cấu hình. Bỏ qua gửi email xác nhận sau khi duyệt.');
+            console.log('電子郵件未設定，略過核准後的確認郵件。');
             return;
         }
         const variables = {
             customerName: booking.customerName,
             customerEmail: booking.customerEmail,
             customerPhone: booking.customerPhone,
-            bookingDate: new Date(booking.bookingDate).toLocaleDateString('vi-VN'),
+            bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
             timeSlot: booking.timeSlot
         };
         // Send to user
@@ -295,7 +295,7 @@ const sendBookingConfirmedEmails = async (booking, actorAdminId) => {
             await resend.emails.send({
                 from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
                 to: adminEmails,
-                subject: adminSubject || 'Lịch đã được xác nhận',
+                subject: adminSubject || '預約已確認',
                 html: adminHtml
             });
         }

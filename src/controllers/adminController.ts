@@ -13,7 +13,7 @@ interface AuthRequest extends Request {
 // Time Slots Management
 export const getTimeSlots = async (req: Request, res: Response) => {
   try {
-    const timeSlots = await TimeSlot.find().sort({ dayOfWeek: 1, startTime: 1 });
+    const timeSlots = await TimeSlot.find().sort({ ruleType: 1, dayOfWeek: 1, specificDate: 1 });
     res.json({
       success: true,
       timeSlots
@@ -32,102 +32,44 @@ export const createTimeSlot = async (req: Request, res: Response) => {
     }
 
     const { type, timeSlots, specificDate, maxBookings, isActive, dayOfWeek } = req.body;
-    const createdSlots = [];
 
-    // Create time slots based on type
-    if (type === 'specific' && specificDate) {
-      // Create slots for specific date
-      for (const slot of timeSlots) {
-        const timeSlot = new TimeSlot({
-          dayOfWeek: new Date(specificDate).getDay(),
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          isActive,
-          isWeekend: false,
-          specificDate: new Date(specificDate),
-          maxBookings,
-          currentBookings: 0,
-          ruleType: 'specific'
-        });
-        await timeSlot.save();
-        createdSlots.push(timeSlot);
+    // Build timeRanges array from timeSlots
+    const timeRanges = (timeSlots || []).map((slot: any) => ({
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      maxBookings: maxBookings || 1
+    }));
+
+    // Create rule based on type
+    let newRule: any = {
+      ruleType: type,
+      timeRanges,
+      isActive: isActive !== false
+    };
+
+    if (type === 'specific') {
+      if (!specificDate) {
+        return res.status(400).json({ message: 'specificDate is required for specific type' });
       }
+      newRule.specificDate = new Date(specificDate);
     } else if (type === 'weekday') {
-      // Create slots for a specific weekday (0-6). If timeSlots is empty, create a closed-day sentinel.
       if (dayOfWeek === undefined || dayOfWeek === null) {
         return res.status(400).json({ message: 'dayOfWeek is required for weekday type' });
       }
-      if (!timeSlots || timeSlots.length === 0) {
-        const timeSlot = new TimeSlot({
-          dayOfWeek,
-          startTime: '00:00',
-          endTime: '00:00',
-          isActive: true,
-          isWeekend: false,
-          maxBookings: 0,
-          currentBookings: 0,
-          ruleType: 'weekday'
-        });
-        await timeSlot.save();
-        createdSlots.push(timeSlot);
-      } else {
-        for (const slot of timeSlots) {
-          const timeSlot = new TimeSlot({
-            dayOfWeek,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            isActive,
-            isWeekend: false,
-            maxBookings,
-            currentBookings: 0,
-            ruleType: 'weekday'
-          });
-          await timeSlot.save();
-          createdSlots.push(timeSlot);
-        }
-      }
+      newRule.dayOfWeek = dayOfWeek;
+    } else if (type === 'all') {
+      // No additional fields needed
     } else {
-      // Create slots for all days (Monday to Sunday). If empty, create closed-day sentinels for all days.
-      const days = [1, 2, 3, 4, 5, 6, 0]
-      if (!timeSlots || timeSlots.length === 0) {
-        for (const d of days) {
-          const timeSlot = new TimeSlot({
-            dayOfWeek: d,
-            startTime: '00:00',
-            endTime: '00:00',
-            isActive: true,
-            isWeekend: false,
-            maxBookings: 0,
-            currentBookings: 0,
-            ruleType: 'all'
-          });
-          await timeSlot.save();
-          createdSlots.push(timeSlot);
-        }
-      } else {
-        for (const d of days) {
-          for (const slot of timeSlots) {
-            const timeSlot = new TimeSlot({
-              dayOfWeek: d,
-              startTime: slot.startTime,
-              endTime: slot.endTime,
-              isActive,
-              isWeekend: false,
-              maxBookings,
-              currentBookings: 0,
-              ruleType: 'all'
-            });
-            await timeSlot.save();
-            createdSlots.push(timeSlot);
-          }
-        }
-      }
+      return res.status(400).json({ message: 'Invalid rule type' });
     }
+
+    const timeSlot = new TimeSlot(newRule);
+    await timeSlot.save();
 
     res.status(201).json({
       success: true,
-      timeSlots: createdSlots,
-      message: `Created ${createdSlots.length} time slots`
+      timeSlot,
+      message: 'Time slot rule created successfully'
     });
   } catch (error) {
     console.error('Create time slot error:', error);
@@ -143,11 +85,37 @@ export const updateTimeSlot = async (req: Request, res: Response) => {
     }
 
     const { id } = req.params;
-    const timeSlot = await TimeSlot.findByIdAndUpdate(id, req.body, { new: true });
+    const { type, timeSlots, specificDate, maxBookings, isActive, dayOfWeek } = req.body;
 
+    const timeSlot = await TimeSlot.findById(id);
     if (!timeSlot) {
       return res.status(404).json({ message: 'Time slot not found' });
     }
+
+    // Build timeRanges array from timeSlots
+    const timeRanges = (timeSlots || []).map((slot: any) => ({
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      maxBookings: maxBookings || 1
+    }));
+
+    // Update fields
+    timeSlot.ruleType = type || timeSlot.ruleType;
+    timeSlot.timeRanges = timeRanges;
+    if (isActive !== undefined) timeSlot.isActive = isActive;
+
+    if (type === 'specific') {
+      if (specificDate) timeSlot.specificDate = new Date(specificDate);
+      timeSlot.dayOfWeek = undefined;
+    } else if (type === 'weekday') {
+      if (dayOfWeek !== undefined) timeSlot.dayOfWeek = dayOfWeek;
+      timeSlot.specificDate = undefined;
+    } else if (type === 'all') {
+      timeSlot.dayOfWeek = undefined;
+      timeSlot.specificDate = undefined;
+    }
+
+    await timeSlot.save();
 
     res.json({
       success: true,

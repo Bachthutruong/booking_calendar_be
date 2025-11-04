@@ -35,54 +35,30 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const TimeSlotSchema = new mongoose_1.Schema({
+    ruleType: {
+        type: String,
+        enum: ['all', 'weekday', 'specific'],
+        required: true
+    },
     dayOfWeek: {
         type: Number,
-        required: true,
         min: 0,
         max: 6
-    },
-    startTime: {
-        type: String,
-        required: true,
-        match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
-    },
-    endTime: {
-        type: String,
-        required: true,
-        match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
-    },
-    isActive: {
-        type: Boolean,
-        default: true
-    },
-    isWeekend: {
-        type: Boolean,
-        default: false
     },
     specificDate: {
         type: Date
     },
-    maxBookings: {
-        type: Number,
-        default: 1,
-        min: 0
-    },
-    currentBookings: {
-        type: Number,
-        default: 0,
-        min: 0
-    },
-    ruleType: {
-        type: String,
-        enum: ['all', 'weekday', 'specific'],
-        default: undefined
-    }
+    timeRanges: [{
+            startTime: { type: String, required: true, match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ },
+            endTime: { type: String, required: true, match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ },
+            maxBookings: { type: Number, required: true, min: 0, default: 1 }
+        }],
+    isActive: { type: Boolean, default: true }
 }, {
     timestamps: true
 });
-// Index for efficient queries
-TimeSlotSchema.index({ dayOfWeek: 1, isActive: 1 });
+// Indexes
+TimeSlotSchema.index({ ruleType: 1, dayOfWeek: 1, isActive: 1 });
 TimeSlotSchema.index({ specificDate: 1, isActive: 1 });
-TimeSlotSchema.index({ ruleType: 1, dayOfWeek: 1 });
 exports.default = mongoose_1.default.model('TimeSlot', TimeSlotSchema);
 //# sourceMappingURL=TimeSlot.js.map

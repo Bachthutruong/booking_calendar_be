@@ -13,7 +13,7 @@ const registerValidation = [
     (0, express_validator_1.body)('email').isEmail().normalizeEmail(),
     (0, express_validator_1.body)('password').isLength({ min: 6 }),
     (0, express_validator_1.body)('name').notEmpty().trim(),
-    (0, express_validator_1.body)('phone').optional().isMobilePhone('vi-VN')
+    (0, express_validator_1.body)('phone').optional().isMobilePhone('zh-TW')
 ];
 const loginValidation = [
     (0, express_validator_1.body)('email').isEmail().normalizeEmail(),
@@ -21,7 +21,7 @@ const loginValidation = [
 ];
 const updateProfileValidation = [
     (0, express_validator_1.body)('name').optional().notEmpty().trim(),
-    (0, express_validator_1.body)('phone').optional().isMobilePhone('vi-VN')
+    (0, express_validator_1.body)('phone').optional().isMobilePhone('zh-TW')
 ];
 const changePasswordValidation = [
     (0, express_validator_1.body)('currentPassword').notEmpty(),

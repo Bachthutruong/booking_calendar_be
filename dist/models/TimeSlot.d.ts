@@ -1,14 +1,15 @@
 import mongoose, { Document } from 'mongoose';
-export interface ITimeSlot extends Document {
-    dayOfWeek: number;
+export interface ITimeRange {
     startTime: string;
     endTime: string;
-    isActive: boolean;
-    isWeekend: boolean;
-    specificDate?: Date;
     maxBookings: number;
-    currentBookings: number;
-    ruleType?: 'all' | 'weekday' | 'specific';
+}
+export interface ITimeSlot extends Document {
+    ruleType: 'all' | 'weekday' | 'specific';
+    dayOfWeek?: number;
+    specificDate?: Date;
+    timeRanges: ITimeRange[];
+    isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
 }

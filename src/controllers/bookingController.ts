@@ -16,92 +16,74 @@ export const getAvailableTimeSlots = async (req: Request, res: Response) => {
   try {
     const { date } = req.params;
     const bookingDate = new Date(date);
+    bookingDate.setHours(0, 0, 0, 0);
     const dayOfWeek = bookingDate.getDay();
-
-    let timeSlots = [];
+    const dateEnd = new Date(bookingDate);
+    dateEnd.setHours(23, 59, 59, 999);
 
     console.log('[TimeSlots] Incoming request', { date, dayOfWeek })
 
-    // Priority 1: Specific date slots (highest priority)
-    const specificDateSlots = await TimeSlot.find({
+    // Priority 1: Specific date rule (highest priority)
+    let matchedRule = await TimeSlot.findOne({
+      ruleType: 'specific',
       specificDate: {
-        $gte: new Date(bookingDate.setHours(0, 0, 0, 0)),
-        $lt: new Date(bookingDate.setHours(23, 59, 59, 999))
+        $gte: bookingDate,
+        $lt: dateEnd
       },
       isActive: true
-    }).sort({ startTime: 1 });
+    });
 
-    console.log('[TimeSlots] Count specificDateSlots', { count: specificDateSlots.length })
+    if (!matchedRule) {
+      // Priority 2: Weekday rule
+      matchedRule = await TimeSlot.findOne({
+        ruleType: 'weekday',
+        dayOfWeek,
+        isActive: true
+      });
+    }
 
-    if (specificDateSlots.length > 0) {
-      timeSlots = specificDateSlots;
-    } else {
-      // Hard stop: if there is an explicit closed-day sentinel, return empty
-      const closedSentinel = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, maxBookings: 0 })
-      if (closedSentinel > 0) {
-        console.log('[TimeSlots] Closed-day sentinel detected, returning empty', { dayOfWeek })
-        return res.json({ success: true, timeSlots: [] })
-      }
+    if (!matchedRule) {
+      // Priority 3: All-days rule
+      matchedRule = await TimeSlot.findOne({
+        ruleType: 'all',
+        isActive: true
+      });
+    }
 
-      // Pre-calc counts for debug
-      const weekdayExplicitCountPre = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: 'weekday' })
-      const legacyCountPre = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: { $exists: false }, specificDate: { $exists: false } })
-      const allDaysCountPre = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: 'all' })
-      console.log('[TimeSlots] Counts', { weekdayExplicitCountPre, legacyCountPre, allDaysCountPre })
-
-      // Priority 2: Explicit weekday rules only (do NOT treat legacy as weekday)
-      const weekdayExplicitCount = await TimeSlot.countDocuments({ dayOfWeek, isActive: true, ruleType: 'weekday' })
-      if (weekdayExplicitCount > 0) {
-        timeSlots = await TimeSlot.find({ dayOfWeek, isActive: true, ruleType: 'weekday' }).sort({ startTime: 1 })
-        console.log('[TimeSlots] Using explicit weekday rules', { dayOfWeek, count: timeSlots.length })
-      } else {
-        // Fallback: legacy (no ruleType) or explicit all-days
-        const legacy = await TimeSlot.find({ dayOfWeek, isActive: true, ruleType: { $exists: false } }).sort({ startTime: 1 })
-        if (legacy.length > 0) {
-          timeSlots = legacy
-          console.log('[TimeSlots] Using legacy rules (treated as ALL)', { dayOfWeek, count: timeSlots.length })
-        } else {
-          timeSlots = await TimeSlot.find({ dayOfWeek, isActive: true, ruleType: 'all' }).sort({ startTime: 1 })
-          console.log('[TimeSlots] Using all-days rules', { dayOfWeek, count: timeSlots.length })
-        }
-      }
+    // If no rule found or rule has empty timeRanges (closed day), return empty
+    if (!matchedRule || !matchedRule.timeRanges || matchedRule.timeRanges.length === 0) {
+      console.log('[TimeSlots] No rule or closed day', { dayOfWeek })
+      return res.json({ success: true, timeSlots: [] })
     }
 
     // Get existing bookings for the date
     const existingBookings = await Booking.find({
       bookingDate: {
-        $gte: new Date(bookingDate.setHours(0, 0, 0, 0)),
-        $lt: new Date(bookingDate.setHours(23, 59, 59, 999))
+        $gte: bookingDate,
+        $lt: dateEnd
       },
       status: { $in: ['pending', 'confirmed'] }
     });
 
-    // Calculate current bookings for each slot
-    const slotsWithBookings = timeSlots.map(slot => {
+    // Build available slots from timeRanges
+    const availableSlots = matchedRule.timeRanges.map((range: any) => {
       const slotBookings = existingBookings.filter(booking => 
-        booking.timeSlot === slot.startTime
+        booking.timeSlot === range.startTime
       );
       return {
-        ...slot.toObject(),
+        id: `${matchedRule._id}-${range.startTime}-${range.endTime}`,
+        startTime: range.startTime,
+        endTime: range.endTime,
+        maxBookings: range.maxBookings,
         currentBookings: slotBookings.length
       };
-    });
+    }).filter((slot: any) => slot.maxBookings > 0 && slot.currentBookings < slot.maxBookings);
 
-    // Filter available slots
-    const availableSlots = slotsWithBookings.filter(slot => 
-      slot.maxBookings > 0 && slot.currentBookings < slot.maxBookings
-    );
-    console.log('[TimeSlots] Available results', { dayOfWeek, total: availableSlots.length, times: availableSlots.map(s => `${s.startTime}-${s.endTime}`) })
+    console.log('[TimeSlots] Available results', { dayOfWeek, total: availableSlots.length, times: availableSlots.map((s: any) => `${s.startTime}-${s.endTime}`) })
 
     res.json({
       success: true,
-      timeSlots: availableSlots.map(slot => ({
-        id: slot._id,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        maxBookings: slot.maxBookings,
-        currentBookings: slot.currentBookings
-      }))
+      timeSlots: availableSlots
     });
   } catch (error) {
     console.error('Get available time slots error:', error);
@@ -153,24 +135,63 @@ export const createBooking = async (req: Request, res: Response) => {
 
     // Extract start time from timeSlot (format: "09:00-10:00" -> "09:00")
     const startTime = timeSlot.split('-')[0];
+    const [rangeStart, rangeEnd] = timeSlot.split('-').map((t: string) => t.trim());
     
-    // Check if slot is still available
-    const slot = await TimeSlot.findOne({ startTime, isActive: true });
-    if (!slot) {
+    const bookingDateObj = new Date(bookingDate);
+    bookingDateObj.setHours(0, 0, 0, 0);
+    const dayOfWeek = bookingDateObj.getDay();
+    const dateEnd = new Date(bookingDateObj);
+    dateEnd.setHours(23, 59, 59, 999);
+
+    // Find matching rule (priority: specific > weekday > all)
+    let matchedRule = await TimeSlot.findOne({
+      ruleType: 'specific',
+      specificDate: {
+        $gte: bookingDateObj,
+        $lt: dateEnd
+      },
+      isActive: true
+    });
+
+    if (!matchedRule) {
+      matchedRule = await TimeSlot.findOne({
+        ruleType: 'weekday',
+        dayOfWeek,
+        isActive: true
+      });
+    }
+
+    if (!matchedRule) {
+      matchedRule = await TimeSlot.findOne({
+        ruleType: 'all',
+        isActive: true
+      });
+    }
+
+    if (!matchedRule || !matchedRule.timeRanges || matchedRule.timeRanges.length === 0) {
       return res.status(400).json({ message: 'Time slot not available' });
     }
 
-    const bookingDateObj = new Date(bookingDate);
+    // Find matching timeRange
+    const matchedRange = matchedRule.timeRanges.find((r: any) => 
+      r.startTime === rangeStart && r.endTime === rangeEnd
+    );
+
+    if (!matchedRange) {
+      return res.status(400).json({ message: 'Time slot not available' });
+    }
+
+    // Check availability
     const existingBookings = await Booking.countDocuments({
       bookingDate: {
-        $gte: new Date(bookingDateObj.setHours(0, 0, 0, 0)),
-        $lt: new Date(bookingDateObj.setHours(23, 59, 59, 999))
+        $gte: bookingDateObj,
+        $lt: dateEnd
       },
       timeSlot: startTime,
       status: { $in: ['pending', 'confirmed'] }
     });
 
-    if (existingBookings >= slot.maxBookings) {
+    if (existingBookings >= matchedRange.maxBookings) {
       return res.status(400).json({ message: 'Time slot is fully booked' });
     }
 
