@@ -34,7 +34,7 @@ const createTimeSlot = async (req, res) => {
         const timeRanges = (timeSlots || []).map((slot) => ({
             startTime: slot.startTime,
             endTime: slot.endTime,
-            maxBookings: maxBookings || 1
+            maxBookings: (slot.maxBookings !== undefined && slot.maxBookings !== null) ? Number(slot.maxBookings) : (maxBookings || 1)
         }));
         // Create rule based on type
         let newRule = {
@@ -90,7 +90,7 @@ const updateTimeSlot = async (req, res) => {
         const timeRanges = (timeSlots || []).map((slot) => ({
             startTime: slot.startTime,
             endTime: slot.endTime,
-            maxBookings: maxBookings || 1
+            maxBookings: (slot.maxBookings !== undefined && slot.maxBookings !== null) ? Number(slot.maxBookings) : (maxBookings || 1)
         }));
         // Update fields
         timeSlot.ruleType = type || timeSlot.ruleType;

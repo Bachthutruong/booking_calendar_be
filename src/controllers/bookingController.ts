@@ -133,9 +133,12 @@ export const createBooking = async (req: Request, res: Response) => {
 
     const { customerName, customerEmail, customerPhone, bookingDate, timeSlot, customFields, notes } = req.body;
 
-    // Extract start time from timeSlot (format: "09:00-10:00" -> "09:00")
-    const startTime = timeSlot.split('-')[0];
-    const [rangeStart, rangeEnd] = timeSlot.split('-').map((t: string) => t.trim());
+    // Accept both "HH:mm" and "HH:mm-HH:mm" formats
+    const timeSlotStr = String(timeSlot || '').trim();
+    const hasEnd = timeSlotStr.includes('-');
+    const rangeStart = hasEnd ? timeSlotStr.split('-')[0].trim() : timeSlotStr;
+    const rangeEnd = hasEnd ? timeSlotStr.split('-')[1].trim() : undefined;
+    const startTime = rangeStart; // we store only startTime in Booking
     
     const bookingDateObj = new Date(bookingDate);
     bookingDateObj.setHours(0, 0, 0, 0);
@@ -173,9 +176,10 @@ export const createBooking = async (req: Request, res: Response) => {
     }
 
     // Find matching timeRange
-    const matchedRange = matchedRule.timeRanges.find((r: any) => 
-      r.startTime === rangeStart && r.endTime === rangeEnd
-    );
+    const matchedRange = matchedRule.timeRanges.find((r: any) => {
+      if (rangeEnd) return r.startTime === rangeStart && r.endTime === rangeEnd;
+      return r.startTime === rangeStart;
+    });
 
     if (!matchedRange) {
       return res.status(400).json({ message: 'Time slot not available' });
