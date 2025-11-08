@@ -85,6 +85,14 @@ const CustomFieldSchema = new mongoose_1.Schema({
     isActive: {
         type: Boolean,
         default: true
+    },
+    isDefault: {
+        type: Boolean,
+        default: false
+    },
+    showInTable: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true

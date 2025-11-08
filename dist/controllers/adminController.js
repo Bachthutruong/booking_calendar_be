@@ -144,6 +144,9 @@ exports.deleteTimeSlot = deleteTimeSlot;
 // Custom Fields Management
 const getCustomFields = async (req, res) => {
     try {
+        // Đảm bảo các field mặc định có isDefault = true
+        const defaultFieldNames = ['customer_name', 'email', 'customer_phone'];
+        await CustomField_1.default.updateMany({ name: { $in: defaultFieldNames } }, { $set: { isDefault: true } });
         const customFields = await CustomField_1.default.find().sort({ order: 1 });
         res.json({
             success: true,
@@ -182,14 +185,31 @@ const updateCustomField = async (req, res) => {
             return res.status(400).json({ errors: errors.array() });
         }
         const { id } = req.params;
-        const customField = await CustomField_1.default.findByIdAndUpdate(id, req.body, { new: true });
+        const customField = await CustomField_1.default.findById(id);
         if (!customField) {
             return res.status(404).json({ message: 'Custom field not found' });
         }
-        res.json({
-            success: true,
-            customField
-        });
+        // Nếu là field mặc định, không cho phép thay đổi name và type
+        if (customField.isDefault) {
+            const updateData = { ...req.body };
+            // Giữ nguyên name và type của field mặc định
+            updateData.name = customField.name;
+            updateData.type = customField.type;
+            // Không cho phép thay đổi isDefault
+            updateData.isDefault = true;
+            const updated = await CustomField_1.default.findByIdAndUpdate(id, updateData, { new: true });
+            res.json({
+                success: true,
+                customField: updated
+            });
+        }
+        else {
+            const updated = await CustomField_1.default.findByIdAndUpdate(id, req.body, { new: true });
+            res.json({
+                success: true,
+                customField: updated
+            });
+        }
     }
     catch (error) {
         console.error('Update custom field error:', error);
@@ -200,10 +220,17 @@ exports.updateCustomField = updateCustomField;
 const deleteCustomField = async (req, res) => {
     try {
         const { id } = req.params;
-        const customField = await CustomField_1.default.findByIdAndDelete(id);
+        const customField = await CustomField_1.default.findById(id);
         if (!customField) {
             return res.status(404).json({ message: 'Custom field not found' });
         }
+        // Không cho phép xóa field mặc định
+        if (customField.isDefault) {
+            return res.status(400).json({
+                message: 'Không thể xóa field mặc định. Field mặc định là bắt buộc và không thể xóa.'
+            });
+        }
+        await CustomField_1.default.findByIdAndDelete(id);
         res.json({
             success: true,
             message: 'Custom field deleted successfully'

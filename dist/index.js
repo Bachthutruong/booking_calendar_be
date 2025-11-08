@@ -117,6 +117,12 @@ mongoose_1.default.connect(process.env.MONGODB_URI)
 // Setup reminder cron job (runs every minute, checks reminderHoursBefore; default 24h)
 const reminderJob = new cron_1.CronJob('*/1 * * * *', async () => {
     try {
+        // Kiểm tra MongoDB connection trước khi query
+        if (mongoose_1.default.connection.readyState !== 1) {
+            // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+            console.log('[CRON] MongoDB not connected, skipping reminder job. State:', mongoose_1.default.connection.readyState);
+            return;
+        }
         // Load reminderHoursBefore from config (default 24)
         const generalCfg = await SystemConfig_1.default.findOne({ type: 'general', isActive: true });
         const reminderHours = Number(generalCfg?.config?.reminderHoursBefore ?? 24);
@@ -156,7 +162,28 @@ const reminderJob = new cron_1.CronJob('*/1 * * * *', async () => {
         }
     }
     catch (error) {
-        console.error('Reminder job error:', error);
+        // Chỉ log lỗi MongoDB connection một lần mỗi 5 phút để tránh spam log
+        const errorMessage = error?.message || String(error);
+        const isMongoError = errorMessage.includes('MongoServerSelectionError') ||
+            errorMessage.includes('ENOTFOUND') ||
+            errorMessage.includes('MongoNetworkError');
+        if (isMongoError) {
+            // Chỉ log lỗi MongoDB connection mỗi 5 phút
+            const lastMongoErrorLog = global.lastMongoErrorLog || 0;
+            const now = Date.now();
+            if (now - lastMongoErrorLog > 5 * 60 * 1000) {
+                console.error('[CRON] Reminder job MongoDB connection error (will retry when connection restored):', {
+                    error: errorMessage,
+                    code: error?.code,
+                    name: error?.name
+                });
+                global.lastMongoErrorLog = now;
+            }
+        }
+        else {
+            // Log các lỗi khác ngay lập tức
+            console.error('[CRON] Reminder job error:', error);
+        }
     }
 }, null, true, 'Asia/Ho_Chi_Minh');
 // Start the cron job

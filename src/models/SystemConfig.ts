@@ -11,6 +11,7 @@ export interface ISystemConfig extends Document {
     address?: string;
     services?: string[];
     support?: string[];
+    showFooter?: boolean; // Control footer visibility
     
     // Email template config
     bookingConfirmationSubject?: string;

@@ -1,14 +1,88 @@
-import { Resend } from 'resend';
+import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 import Booking from '../models/Booking';
 import User from '../models/User';
 import SystemConfig from '../models/SystemConfig';
+import CustomField from '../models/CustomField';
 
-// 檢查電子郵件設定
+// Load environment variables (đảm bảo được load trước khi sử dụng)
+dotenv.config();
+
+// Kiểm tra cấu hình email SMTP
 const isEmailConfigured = () => {
-  return process.env.RESEND_API_KEY || 're_QqaMiRDg_97ff4nmbPHUFRrC2ghLAoU5R';
+  const hasConfig = !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS);
+  
+  // Log để debug
+  if (!hasConfig) {
+    console.log('[EMAIL] ⚠️ Email chưa được cấu hình. Kiểm tra các biến môi trường:');
+    console.log('[EMAIL] EMAIL_HOST:', process.env.EMAIL_HOST ? '✓' : '✗');
+    console.log('[EMAIL] EMAIL_USER:', process.env.EMAIL_USER ? '✓' : '✗');
+    console.log('[EMAIL] EMAIL_PASS:', process.env.EMAIL_PASS ? '✓' : '✗');
+    console.log('[EMAIL] EMAIL_PORT:', process.env.EMAIL_PORT || '587 (default)');
+  } else {
+    console.log('[EMAIL] ✅ Email đã được cấu hình:', {
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT || '587',
+      user: process.env.EMAIL_USER
+    });
+  }
+  
+  return hasConfig;
 };
 
-const resend = isEmailConfigured() ? new Resend(process.env.RESEND_API_KEY || 're_QqaMiRDg_97ff4nmbPHUFRrC2ghLAoU5R') : null;
+// Tạo transporter SMTP (tạo mỗi lần để đảm bảo env vars được load)
+const createTransporter = () => {
+  if (!isEmailConfigured()) {
+    return null;
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.EMAIL_PORT || '587'),
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    
+    console.log('[EMAIL] ✅ Transporter SMTP đã được tạo thành công');
+    return transporter;
+  } catch (error: any) {
+    console.error('[EMAIL] ❌ Lỗi tạo transporter SMTP:', error?.message || error);
+    return null;
+  }
+};
+
+// Tạo transporter khi module được load
+let transporter = createTransporter();
+
+// Helper để lấy transporter (tạo lại nếu cần)
+const getTransporter = () => {
+  if (!transporter) {
+    transporter = createTransporter();
+  }
+  return transporter;
+};
+
+// Helper: Gửi email qua SMTP
+const sendEmail = async (to: string, subject: string, html: string, from?: string) => {
+  const currentTransporter = getTransporter();
+  
+  if (!currentTransporter) {
+    throw new Error('Email transporter chưa được cấu hình. Vui lòng kiểm tra EMAIL_HOST, EMAIL_USER, EMAIL_PASS trong file .env');
+  }
+
+  const emailFrom = from || process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@example.com';
+  
+  return await currentTransporter.sendMail({
+    from: emailFrom,
+    to: to,
+    subject: subject,
+    html: html
+  });
+};
 
 const getEmailTemplate = async (type: string) => {
   // 預設模板（不需要 MongoDB）
@@ -123,116 +197,287 @@ const replaceTemplateVariables = (template: string, variables: Record<string, an
   return result;
 };
 
+// Helper: Extract email, name, phone from customFields
+const extractCustomerInfoFromCustomFields = async (booking: any) => {
+  let email = booking.customerEmail;
+  let name = booking.customerName;
+  let phone = booking.customerPhone;
+
+  // Nếu không có trong trường trực tiếp, tìm trong customFields
+  if (!email || !name || !phone) {
+    const customFields = await CustomField.find({ isActive: true }).sort({ order: 1 });
+    const valueById: Record<string, any> = {};
+    (booking.customFields || []).forEach((f: any) => {
+      valueById[f.fieldId] = f.value;
+    });
+
+    for (const field of customFields) {
+      const value = valueById[String(field._id)];
+      if (value) {
+        // Tìm email field
+        if (!email && (field.name === 'email' || field.type === 'email')) {
+          email = String(value).trim().toLowerCase();
+        }
+        // Tìm name field
+        if (!name && (field.name === 'customer_name' || field.name === 'name' || field.name === 'full_name')) {
+          name = String(value).trim();
+        }
+        // Tìm phone field
+        if (!phone && (field.name === 'customer_phone' || field.name === 'phone' || field.type === 'phone')) {
+          phone = String(value).trim();
+        }
+      }
+    }
+  }
+
+  return { email, name, phone };
+};
+
 export const sendBookingConfirmationEmail = async (booking: any) => {
   try {
-    if (!isEmailConfigured() || !resend) {
-      console.log('電子郵件未設定，略過發送確認郵件。');
+    const currentTransporter = getTransporter();
+    if (!isEmailConfigured() || !currentTransporter) {
+      console.log('[EMAIL] 電子郵件未設定，略過發送確認郵件。');
+      console.log('[EMAIL] Vui lòng kiểm tra file backend/.env có các biến: EMAIL_HOST, EMAIL_USER, EMAIL_PASS');
       return;
     }
+
+    // Extract customer info từ customFields nếu không có trong trường trực tiếp
+    const { email, name, phone } = await extractCustomerInfoFromCustomFields(booking);
+    const customerEmail = email || booking.customerEmail;
+    const customerName = name || booking.customerName;
+    const customerPhone = phone || booking.customerPhone;
+
+    console.log('[EMAIL] Bắt đầu gửi email xác nhận booking:', {
+      bookingId: booking._id,
+      customerEmail,
+      customerName,
+      customerPhone,
+      hasCustomFields: !!(booking.customFields && booking.customFields.length > 0)
+    });
 
     const subject = await getEmailTemplate('bookingConfirmationSubject');
     const content = await getEmailTemplate('bookingConfirmationContent');
     
     const variables = {
-      customerName: booking.customerName,
-      customerEmail: booking.customerEmail,
-      customerPhone: booking.customerPhone,
+      customerName,
+      customerEmail,
+      customerPhone,
       bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
-      timeSlot: booking.timeSlot
+      timeSlot: booking.timeSlot,
+      notes: booking.notes
     };
     
     const customerEmailHtml = replaceTemplateVariables(content, variables);
 
     // Gửi email cho khách hàng (nếu có email)
-    if (booking.customerEmail) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: booking.customerEmail,
-        subject: subject,
-        html: customerEmailHtml
-      });
+    if (customerEmail) {
+      try {
+        console.log('[EMAIL] Đang gửi email cho khách hàng:', customerEmail);
+        const customerResult = await sendEmail(customerEmail, subject, customerEmailHtml);
+        
+        console.log('[EMAIL] ✅ Email khách hàng đã gửi thành công:', {
+          email: customerEmail,
+          messageId: customerResult.messageId
+        });
+      } catch (customerError: any) {
+        console.error('[EMAIL] ❌ Lỗi gửi email cho khách hàng:', {
+          email: customerEmail,
+          error: customerError?.message || customerError,
+          details: customerError
+        });
+      }
+    } else {
+      console.log('[EMAIL] ⚠️ Khách hàng không có email, bỏ qua gửi email xác nhận');
     }
 
-    // Gửi email cho tất cả admin
+    // Gửi email cho tất cả admin và staff
     const adminSubject = await getEmailTemplate('adminNewBookingSubject');
     const adminContent = await getEmailTemplate('adminNewBookingContent');
     const adminHtml = replaceTemplateVariables(adminContent, variables);
-    const admins = await User.find({ role: 'admin', isActive: true }).select('email');
+    const admins = await User.find({ role: { $in: ['admin', 'staff'] }, isActive: true }).select('email name role');
     const adminEmails = admins.map((u: any) => u.email).filter(Boolean);
+    
+    console.log('[EMAIL] Tìm thấy admin/staff:', {
+      total: admins.length,
+      emails: adminEmails,
+      details: admins.map((u: any) => ({ email: u.email, name: u.name, role: u.role }))
+    });
+
     if (adminEmails.length > 0) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: adminEmails,
-        subject: adminSubject || '新的諮詢預約',
-        html: adminHtml
+      let successCount = 0;
+      let errorCount = 0;
+      
+      // Gửi từng email riêng lẻ với delay để tránh rate limit
+      for (let i = 0; i < adminEmails.length; i++) {
+        const adminEmail = adminEmails[i];
+        
+        // Thêm delay 500ms giữa các email để tránh rate limit
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        try {
+          console.log('[EMAIL] Đang gửi email cho admin/staff:', adminEmail, `(${i + 1}/${adminEmails.length})`);
+          const adminResult = await sendEmail(adminEmail, adminSubject || '新的諮詢預約', adminHtml);
+          
+          successCount++;
+          console.log('[EMAIL] ✅ Email admin/staff đã gửi thành công:', {
+            email: adminEmail,
+            messageId: adminResult.messageId
+          });
+        } catch (adminError: any) {
+          errorCount++;
+          console.error('[EMAIL] ❌ Lỗi gửi email cho admin/staff:', {
+            email: adminEmail,
+            error: adminError?.message || adminError,
+            details: adminError
+          });
+        }
+      }
+      
+      console.log('[EMAIL] 📊 Tổng kết gửi email admin/staff:', {
+        total: adminEmails.length,
+        success: successCount,
+        failed: errorCount
       });
+    } else {
+      console.log('[EMAIL] ⚠️ Không tìm thấy admin/staff nào để gửi email');
     }
     
-    console.log('確認郵件已透過 Resend 成功寄出');
-  } catch (error) {
-    console.error('Send booking confirmation email error:', error);
+    console.log('[EMAIL] ✅ Hoàn tất quá trình gửi email xác nhận booking');
+  } catch (error: any) {
+    console.error('[EMAIL] ❌ Lỗi nghiêm trọng khi gửi email xác nhận:', {
+      error: error?.message || error,
+      stack: error?.stack,
+      details: error
+    });
   }
 };
 
 export const sendBookingReminderEmail = async (booking: any) => {
   try {
-    if (!isEmailConfigured() || !resend) {
-      console.log('電子郵件未設定，略過發送提醒郵件。');
+    const currentTransporter = getTransporter();
+    if (!isEmailConfigured() || !currentTransporter) {
+      console.log('[EMAIL] 電子郵件未設定，略過發送提醒郵件。');
       return;
     }
+
+    // Extract customer info từ customFields nếu không có trong trường trực tiếp
+    const { email, name, phone } = await extractCustomerInfoFromCustomFields(booking);
+    const customerEmail = email || booking.customerEmail;
+    const customerName = name || booking.customerName;
+    const customerPhone = phone || booking.customerPhone;
+
+    console.log('[EMAIL] Bắt đầu gửi email reminder booking:', {
+      bookingId: booking._id,
+      customerEmail
+    });
 
     const subject = await getEmailTemplate('bookingReminderSubject');
     const content = await getEmailTemplate('bookingReminderContent');
     
     const variables = {
-      customerName: booking.customerName,
-      customerEmail: booking.customerEmail,
-      customerPhone: booking.customerPhone,
+      customerName,
+      customerEmail,
+      customerPhone,
       bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
       timeSlot: booking.timeSlot
     };
     
     const customerEmailHtml = replaceTemplateVariables(content, variables);
 
-    if (booking.customerEmail) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: booking.customerEmail,
-        subject: subject,
-        html: customerEmailHtml
-      });
+    if (customerEmail) {
+      try {
+        console.log('[EMAIL] Đang gửi email reminder cho khách hàng:', customerEmail);
+        const customerResult = await sendEmail(customerEmail, subject, customerEmailHtml);
+        
+        console.log('[EMAIL] ✅ Email reminder khách hàng đã gửi thành công:', {
+          email: customerEmail,
+          messageId: customerResult.messageId
+        });
+      } catch (customerError: any) {
+        console.error('[EMAIL] ❌ Lỗi gửi email reminder cho khách hàng:', {
+          email: customerEmail,
+          error: customerError?.message || customerError
+        });
+      }
     }
 
-    // Email to all admins as well
-    const admins = await User.find({ role: 'admin', isActive: true }).select('email');
+    // Email to all admins and staff as well
+    const admins = await User.find({ role: { $in: ['admin', 'staff'] }, isActive: true }).select('email');
     const adminEmails = admins.map((u: any) => u.email).filter(Boolean);
     if (adminEmails.length > 0) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: adminEmails,
-        subject: await getEmailTemplate('bookingReminderSubject'),
-        html: customerEmailHtml
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (let i = 0; i < adminEmails.length; i++) {
+        const adminEmail = adminEmails[i];
+        
+        // Thêm delay 500ms giữa các email để tránh rate limit
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        try {
+          console.log('[EMAIL] Đang gửi email reminder cho admin/staff:', adminEmail, `(${i + 1}/${adminEmails.length})`);
+          const adminResult = await sendEmail(adminEmail, subject, customerEmailHtml);
+          
+          successCount++;
+          console.log('[EMAIL] ✅ Email reminder admin/staff đã gửi thành công:', {
+            email: adminEmail,
+            messageId: adminResult.messageId
+          });
+        } catch (adminError: any) {
+          errorCount++;
+          console.error('[EMAIL] ❌ Lỗi gửi email reminder cho admin/staff:', {
+            email: adminEmail,
+            error: adminError?.message || adminError
+          });
+        }
+      }
+      
+      console.log('[EMAIL] 📊 Tổng kết gửi email reminder admin/staff:', {
+        total: adminEmails.length,
+        success: successCount,
+        failed: errorCount
       });
     }
-  } catch (error) {
-    console.error('Send booking reminder email error:', error);
+  } catch (error: any) {
+    console.error('[EMAIL] ❌ Lỗi nghiêm trọng khi gửi email reminder:', {
+      error: error?.message || error,
+      details: error
+    });
   }
 };
 
 export const sendBookingCancellationEmail = async (booking: any, cancellationReason?: string, excludeAdminId?: string) => {
   try {
-    if (!isEmailConfigured() || !resend) {
-      console.log('電子郵件未設定，略過發送取消郵件。');
+    const currentTransporter = getTransporter();
+    if (!isEmailConfigured() || !currentTransporter) {
+      console.log('[EMAIL] 電子郵件未設定，略過發送取消郵件。');
       return;
     }
+
+    // Extract customer info từ customFields nếu không có trong trường trực tiếp
+    const { email, name, phone } = await extractCustomerInfoFromCustomFields(booking);
+    const customerEmail = email || booking.customerEmail;
+    const customerName = name || booking.customerName;
+    const customerPhone = phone || booking.customerPhone;
+
+    console.log('[EMAIL] Bắt đầu gửi email hủy booking:', {
+      bookingId: booking._id,
+      customerEmail,
+      excludeAdminId
+    });
 
     const subject = await getEmailTemplate('bookingCancellationSubject');
     const content = await getEmailTemplate('bookingCancellationContent');
     
     const variables = {
-      customerName: booking.customerName,
-      customerEmail: booking.customerEmail,
-      customerPhone: booking.customerPhone,
+      customerName,
+      customerEmail,
+      customerPhone,
       bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
       timeSlot: booking.timeSlot,
       cancellationReason: cancellationReason
@@ -240,49 +485,108 @@ export const sendBookingCancellationEmail = async (booking: any, cancellationRea
     
     const customerEmailHtml = replaceTemplateVariables(content, variables);
 
-    if (booking.customerEmail) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: booking.customerEmail,
-        subject: subject,
-        html: customerEmailHtml
-      });
+    if (customerEmail) {
+      try {
+        console.log('[EMAIL] Đang gửi email hủy cho khách hàng:', customerEmail);
+        const customerResult = await sendEmail(customerEmail, subject, customerEmailHtml);
+        
+        console.log('[EMAIL] ✅ Email hủy khách hàng đã gửi thành công:', {
+          email: customerEmail,
+          messageId: customerResult.messageId
+        });
+      } catch (customerError: any) {
+        console.error('[EMAIL] ❌ Lỗi gửi email hủy cho khách hàng:', {
+          email: customerEmail,
+          error: customerError?.message || customerError
+        });
+      }
     }
 
-    // Email to all admins (exclude actor if provided)
+    // Email to all admins and staff (exclude actor if provided)
     const adminSubject = await getEmailTemplate('adminBookingCancelledSubject');
     const adminContent = await getEmailTemplate('adminBookingCancelledContent');
     const adminHtml = replaceTemplateVariables(adminContent, variables);
-    const adminQuery: any = { role: 'admin', isActive: true };
+    const adminQuery: any = { role: { $in: ['admin', 'staff'] }, isActive: true };
     const admins = await User.find(adminQuery).select('email _id');
     const adminEmails = admins
       .filter((u: any) => !excludeAdminId || String(u._id) !== String(excludeAdminId))
       .map((u: any) => u.email)
       .filter(Boolean);
+    
+    console.log('[EMAIL] Admin/staff nhận email hủy:', {
+      total: admins.length,
+      emails: adminEmails,
+      excludeAdminId
+    });
+
     if (adminEmails.length > 0) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: adminEmails,
-        subject: adminSubject || '取消諮詢預約',
-        html: adminHtml
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (let i = 0; i < adminEmails.length; i++) {
+        const adminEmail = adminEmails[i];
+        
+        // Thêm delay 500ms giữa các email để tránh rate limit
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        try {
+          console.log('[EMAIL] Đang gửi email hủy cho admin/staff:', adminEmail, `(${i + 1}/${adminEmails.length})`);
+          const adminResult = await sendEmail(adminEmail, adminSubject || '取消諮詢預約', adminHtml);
+          
+          successCount++;
+          console.log('[EMAIL] ✅ Email hủy admin/staff đã gửi thành công:', {
+            email: adminEmail,
+            messageId: adminResult.messageId
+          });
+        } catch (adminError: any) {
+          errorCount++;
+          console.error('[EMAIL] ❌ Lỗi gửi email hủy cho admin/staff:', {
+            email: adminEmail,
+            error: adminError?.message || adminError
+          });
+        }
+      }
+      
+      console.log('[EMAIL] 📊 Tổng kết gửi email hủy admin/staff:', {
+        total: adminEmails.length,
+        success: successCount,
+        failed: errorCount
       });
     }
-  } catch (error) {
-    console.error('Send booking cancellation email error:', error);
+  } catch (error: any) {
+    console.error('[EMAIL] ❌ Lỗi nghiêm trọng khi gửi email hủy:', {
+      error: error?.message || error,
+      details: error
+    });
   }
 };
 
 export const sendBookingConfirmedEmails = async (booking: any, actorAdminId?: string) => {
   try {
-    if (!isEmailConfigured() || !resend) {
-      console.log('電子郵件未設定，略過核准後的確認郵件。');
+    const currentTransporter = getTransporter();
+    if (!isEmailConfigured() || !currentTransporter) {
+      console.log('[EMAIL] 電子郵件未設定，略過核准後的確認郵件。');
       return;
     }
 
+    // Extract customer info từ customFields nếu không có trong trường trực tiếp
+    const { email, name, phone } = await extractCustomerInfoFromCustomFields(booking);
+    const customerEmail = email || booking.customerEmail;
+    const customerName = name || booking.customerName;
+    const customerPhone = phone || booking.customerPhone;
+
+    console.log('[EMAIL] Bắt đầu gửi email xác nhận booking:', {
+      bookingId: booking._id,
+      customerEmail,
+      actorAdminId
+    });
+
     const variables = {
-      customerName: booking.customerName,
-      customerEmail: booking.customerEmail,
-      customerPhone: booking.customerPhone,
+      customerName,
+      customerEmail,
+      customerPhone,
       bookingDate: new Date(booking.bookingDate).toLocaleDateString('zh-TW'),
       timeSlot: booking.timeSlot
     };
@@ -291,33 +595,79 @@ export const sendBookingConfirmedEmails = async (booking: any, actorAdminId?: st
     const userSubject = (await getEmailTemplate('userBookingConfirmedSubject')) || (await getEmailTemplate('bookingConfirmationSubject'));
     const userContent = (await getEmailTemplate('userBookingConfirmedContent')) || (await getEmailTemplate('bookingConfirmationContent'));
     const userHtml = replaceTemplateVariables(userContent, variables);
-    if (booking.customerEmail) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: booking.customerEmail,
-        subject: userSubject,
-        html: userHtml
-      });
+    if (customerEmail) {
+      try {
+        console.log('[EMAIL] Đang gửi email xác nhận cho khách hàng:', customerEmail);
+        const userResult = await sendEmail(customerEmail, userSubject, userHtml);
+        
+        console.log('[EMAIL] ✅ Email xác nhận khách hàng đã gửi thành công:', {
+          email: customerEmail,
+          messageId: userResult.messageId
+        });
+      } catch (userError: any) {
+        console.error('[EMAIL] ❌ Lỗi gửi email xác nhận cho khách hàng:', {
+          email: customerEmail,
+          error: userError?.message || userError
+        });
+      }
     }
 
-    // Notify other admins
+    // Notify other admins and staff
     const adminSubject = await getEmailTemplate('adminBookingConfirmedSubject');
     const adminContent = await getEmailTemplate('adminBookingConfirmedContent');
     const adminHtml = replaceTemplateVariables(adminContent, variables);
-    const admins = await User.find({ role: 'admin', isActive: true }).select('email _id');
+    const admins = await User.find({ role: { $in: ['admin', 'staff'] }, isActive: true }).select('email _id');
     const adminEmails = admins
       .filter((u: any) => !actorAdminId || String(u._id) !== String(actorAdminId))
       .map((u: any) => u.email)
       .filter(Boolean);
+    
+    console.log('[EMAIL] Admin/staff nhận email xác nhận:', {
+      total: admins.length,
+      emails: adminEmails,
+      actorAdminId
+    });
+
     if (adminEmails.length > 0) {
-      await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: adminEmails,
-        subject: adminSubject || '預約已確認',
-        html: adminHtml
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (let i = 0; i < adminEmails.length; i++) {
+        const adminEmail = adminEmails[i];
+        
+        // Thêm delay 500ms giữa các email để tránh rate limit
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        try {
+          console.log('[EMAIL] Đang gửi email xác nhận cho admin/staff:', adminEmail, `(${i + 1}/${adminEmails.length})`);
+          const adminResult = await sendEmail(adminEmail, adminSubject || '預約已確認', adminHtml);
+          
+          successCount++;
+          console.log('[EMAIL] ✅ Email xác nhận admin/staff đã gửi thành công:', {
+            email: adminEmail,
+            messageId: adminResult.messageId
+          });
+        } catch (adminError: any) {
+          errorCount++;
+          console.error('[EMAIL] ❌ Lỗi gửi email xác nhận cho admin/staff:', {
+            email: adminEmail,
+            error: adminError?.message || adminError
+          });
+        }
+      }
+      
+      console.log('[EMAIL] 📊 Tổng kết gửi email xác nhận admin/staff:', {
+        total: adminEmails.length,
+        success: successCount,
+        failed: errorCount
       });
     }
-  } catch (error) {
-    console.error('Send booking confirmed emails error:', error);
+  } catch (error: any) {
+    console.error('[EMAIL] ❌ Lỗi nghiêm trọng khi gửi email xác nhận:', {
+      error: error?.message || error,
+      details: error
+    });
   }
 };

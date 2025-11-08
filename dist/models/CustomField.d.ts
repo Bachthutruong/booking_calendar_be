@@ -20,6 +20,8 @@ export interface ICustomField extends Document {
     };
     order: number;
     isActive: boolean;
+    isDefault: boolean;
+    showInTable?: boolean;
     createdAt: Date;
     updatedAt: Date;
 }

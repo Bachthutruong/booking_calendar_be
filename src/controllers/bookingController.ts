@@ -208,11 +208,42 @@ export const createBooking = async (req: Request, res: Response) => {
       }
     }
 
+    // Extract email, name, phone from customFields nếu không có trong trường trực tiếp
+    let finalEmail = customerEmail;
+    let finalName = customerName;
+    let finalPhone = customerPhone;
+
+    if (customFields && customFields.length > 0) {
+      const allFields = await CustomField.find({ isActive: true }).sort({ order: 1 });
+      const valueById: Record<string, any> = {};
+      customFields.forEach((f: any) => {
+        valueById[f.fieldId] = f.value;
+      });
+
+      for (const field of allFields) {
+        const value = valueById[String(field._id)];
+        if (value) {
+          // Tìm email field
+          if (!finalEmail && (field.name === 'email' || field.type === 'email')) {
+            finalEmail = String(value).trim().toLowerCase();
+          }
+          // Tìm name field
+          if (!finalName && (field.name === 'customer_name' || field.name === 'name' || field.name === 'full_name')) {
+            finalName = String(value).trim();
+          }
+          // Tìm phone field
+          if (!finalPhone && (field.name === 'customer_phone' || field.name === 'phone' || field.type === 'phone')) {
+            finalPhone = String(value).trim();
+          }
+        }
+      }
+    }
+
     // Create booking
     const booking = new Booking({
-      customerName,
-      customerEmail,
-      customerPhone,
+      customerName: finalName,
+      customerEmail: finalEmail,
+      customerPhone: finalPhone,
       bookingDate: bookingDateObj,
       timeSlot: startTime,
       customFields: customFields || [],
@@ -234,12 +265,24 @@ export const createBooking = async (req: Request, res: Response) => {
 
 export const getBookings = async (req: Request, res: Response) => {
   try {
-    const { page = 1, limit = 10, status, date, search, range } = req.query;
+    const { page = 1, limit = 10, status, date, search, range, startDate, endDate } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
     let filter: any = {};
     if (status && status !== 'all') filter.status = status;
-    if (date) {
+    
+    // Support date range filter (for month filtering) - ưu tiên hơn date filter
+    if (startDate && endDate) {
+      const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+      filter.bookingDate = {
+        $gte: start,
+        $lte: end
+      };
+    } else if (date) {
+      // Single date filter (chỉ dùng nếu không có startDate/endDate)
       const dateObj = new Date(date as string);
       filter.bookingDate = {
         $gte: new Date(dateObj.setHours(0, 0, 0, 0)),
@@ -255,10 +298,12 @@ export const getBookings = async (req: Request, res: Response) => {
         ...(filter.bookingDate || {}),
         $gte: new Date(sevenDaysAgo.setHours(0, 0, 0, 0))
       };
-      // If no explicit status provided, default to confirmed in last7 range
-      if (!status || status === 'all') {
+      // Chỉ force confirmed nếu không có status được chỉ định
+      // Nếu status === 'all', cho phép xem tất cả trạng thái
+      if (!status) {
         filter.status = 'confirmed';
       }
+      // Nếu status === 'all', không thêm filter.status để xem tất cả
     }
     
     // Add search functionality

@@ -9,6 +9,7 @@ export interface ISystemConfig extends Document {
         address?: string;
         services?: string[];
         support?: string[];
+        showFooter?: boolean;
         bookingConfirmationSubject?: string;
         bookingConfirmationContent?: string;
         bookingReminderSubject?: string;

@@ -18,7 +18,8 @@ export const getSystemConfig = async (req: Request, res: Response) => {
           phone: "0123 456 789",
           address: "越南胡志明市第一郡 ABC 路 123 號",
           services: ["諮詢預約", "24/7 支援", "自動化報告"],
-          support: ["使用指南", "FAQ", "聯絡支援"]
+          support: ["使用指南", "FAQ", "聯絡支援"],
+          showFooter: true
         },
         email_template: {
           bookingConfirmationSubject: "諮詢預約確認",

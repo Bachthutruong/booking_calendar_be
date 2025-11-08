@@ -23,6 +23,8 @@ export interface ICustomField extends Document {
   };
   order: number;
   isActive: boolean;
+  isDefault: boolean; // Field mặc định không thể xóa
+  showInTable?: boolean; // Hiển thị trong bảng danh sách booking (optional)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -79,6 +81,14 @@ const CustomFieldSchema = new Schema<ICustomField>({
   isActive: {
     type: Boolean,
     default: true
+  },
+  isDefault: {
+    type: Boolean,
+    default: false
+  },
+  showInTable: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
