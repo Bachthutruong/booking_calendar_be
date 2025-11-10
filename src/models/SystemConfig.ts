@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ISystemConfig extends Document {
-  type: 'footer' | 'email_template' | 'general' | 'success_page';
+  type: 'footer' | 'email_template' | 'general' | 'success_page' | 'email_config';
   config: {
     // Footer config
     companyName?: string;
@@ -37,6 +37,13 @@ export interface ISystemConfig extends Document {
     timezone?: string;
     reminderTime?: string; // Time to send reminders (e.g., "09:00")
     reminderHoursBefore?: number; // Number of hours before start time to send auto reminder
+    
+    // Email config (SMTP settings)
+    EMAIL_HOST?: string;
+    EMAIL_PORT?: string;
+    EMAIL_USER?: string;
+    EMAIL_PASS?: string;
+    EMAIL_FROM?: string;
   };
   isActive: boolean;
   createdAt: Date;
@@ -46,7 +53,7 @@ export interface ISystemConfig extends Document {
 const SystemConfigSchema = new Schema<ISystemConfig>({
   type: {
     type: String,
-    enum: ['footer', 'email_template', 'general', 'success_page'],
+    enum: ['footer', 'email_template', 'general', 'success_page', 'email_config'],
     required: true
   },
   config: {

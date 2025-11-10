@@ -37,7 +37,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const SystemConfigSchema = new mongoose_1.Schema({
     type: {
         type: String,
-        enum: ['footer', 'email_template', 'general', 'success_page'],
+        enum: ['footer', 'email_template', 'general', 'success_page', 'email_config'],
         required: true
     },
     config: {

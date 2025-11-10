@@ -8,42 +8,72 @@ import CustomField from '../models/CustomField';
 // Load environment variables (đảm bảo được load trước khi sử dụng)
 dotenv.config();
 
+// Helper: Lấy cấu hình email từ SystemConfig hoặc fallback về .env
+const getEmailConfig = async () => {
+  try {
+    const emailConfig = await SystemConfig.findOne({ type: 'email_config', isActive: true });
+    const config = emailConfig?.config || {};
+    
+    // Fallback về .env nếu không có trong DB
+    return {
+      EMAIL_HOST: config.EMAIL_HOST || process.env.EMAIL_HOST,
+      EMAIL_PORT: config.EMAIL_PORT || process.env.EMAIL_PORT || '587',
+      EMAIL_USER: config.EMAIL_USER || process.env.EMAIL_USER,
+      EMAIL_PASS: config.EMAIL_PASS || process.env.EMAIL_PASS,
+      EMAIL_FROM: config.EMAIL_FROM || process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@example.com'
+    };
+  } catch (error) {
+    console.error('[EMAIL] Lỗi khi lấy cấu hình email từ DB, sử dụng .env:', error);
+    // Fallback về .env nếu có lỗi
+    return {
+      EMAIL_HOST: process.env.EMAIL_HOST,
+      EMAIL_PORT: process.env.EMAIL_PORT || '587',
+      EMAIL_USER: process.env.EMAIL_USER,
+      EMAIL_PASS: process.env.EMAIL_PASS,
+      EMAIL_FROM: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@example.com'
+    };
+  }
+};
+
 // Kiểm tra cấu hình email SMTP
-const isEmailConfigured = () => {
-  const hasConfig = !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS);
+const isEmailConfigured = async () => {
+  const config = await getEmailConfig();
+  const hasConfig = !!(config.EMAIL_HOST && config.EMAIL_USER && config.EMAIL_PASS);
   
   // Log để debug
   if (!hasConfig) {
-    console.log('[EMAIL] ⚠️ Email chưa được cấu hình. Kiểm tra các biến môi trường:');
-    console.log('[EMAIL] EMAIL_HOST:', process.env.EMAIL_HOST ? '✓' : '✗');
-    console.log('[EMAIL] EMAIL_USER:', process.env.EMAIL_USER ? '✓' : '✗');
-    console.log('[EMAIL] EMAIL_PASS:', process.env.EMAIL_PASS ? '✓' : '✗');
-    console.log('[EMAIL] EMAIL_PORT:', process.env.EMAIL_PORT || '587 (default)');
+    console.log('[EMAIL] ⚠️ Email chưa được cấu hình. Kiểm tra cấu hình admin hoặc các biến môi trường:');
+    console.log('[EMAIL] EMAIL_HOST:', config.EMAIL_HOST ? '✓' : '✗');
+    console.log('[EMAIL] EMAIL_USER:', config.EMAIL_USER ? '✓' : '✗');
+    console.log('[EMAIL] EMAIL_PASS:', config.EMAIL_PASS ? '✓' : '✗');
+    console.log('[EMAIL] EMAIL_PORT:', config.EMAIL_PORT || '587 (default)');
   } else {
     console.log('[EMAIL] ✅ Email đã được cấu hình:', {
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT || '587',
-      user: process.env.EMAIL_USER
+      host: config.EMAIL_HOST,
+      port: config.EMAIL_PORT || '587',
+      user: config.EMAIL_USER
     });
   }
   
   return hasConfig;
 };
 
-// Tạo transporter SMTP (tạo mỗi lần để đảm bảo env vars được load)
-const createTransporter = () => {
-  if (!isEmailConfigured()) {
+// Tạo transporter SMTP (tạo mỗi lần để đảm bảo config được load)
+const createTransporter = async () => {
+  const config = await getEmailConfig();
+  
+  if (!config.EMAIL_HOST || !config.EMAIL_USER || !config.EMAIL_PASS) {
     return null;
   }
 
   try {
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.EMAIL_PORT || '587'),
+      host: config.EMAIL_HOST || 'smtp.gmail.com',
+      port: parseInt(config.EMAIL_PORT || '587'),
       secure: false, // true for 465, false for other ports
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+        user: config.EMAIL_USER,
+        pass: config.EMAIL_PASS
       }
     });
     
@@ -55,26 +85,40 @@ const createTransporter = () => {
   }
 };
 
-// Tạo transporter khi module được load
-let transporter = createTransporter();
+// Cache transporter (sẽ được tạo lại khi cần)
+let transporter: nodemailer.Transporter | null = null;
 
 // Helper để lấy transporter (tạo lại nếu cần)
-const getTransporter = () => {
+const getTransporter = async () => {
   if (!transporter) {
-    transporter = createTransporter();
+    transporter = await createTransporter();
   }
   return transporter;
 };
 
+// Hàm để vô hiệu hóa cache transporter (gọi khi cấu hình email thay đổi)
+export const invalidateEmailTransporter = async () => {
+  if (transporter) {
+    try {
+      await transporter.close();
+    } catch (error) {
+      // Ignore errors when closing
+    }
+    transporter = null;
+    console.log('[EMAIL] ✅ Đã vô hiệu hóa transporter cache');
+  }
+};
+
 // Helper: Gửi email qua SMTP
 const sendEmail = async (to: string, subject: string, html: string, from?: string) => {
-  const currentTransporter = getTransporter();
+  const currentTransporter = await getTransporter();
   
   if (!currentTransporter) {
-    throw new Error('Email transporter chưa được cấu hình. Vui lòng kiểm tra EMAIL_HOST, EMAIL_USER, EMAIL_PASS trong file .env');
+    throw new Error('Email transporter chưa được cấu hình. Vui lòng kiểm tra cấu hình email trong admin panel hoặc các biến môi trường EMAIL_HOST, EMAIL_USER, EMAIL_PASS');
   }
 
-  const emailFrom = from || process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@example.com';
+  const config = await getEmailConfig();
+  const emailFrom = from || config.EMAIL_FROM || 'noreply@example.com';
   
   return await currentTransporter.sendMail({
     from: emailFrom,
@@ -235,10 +279,11 @@ const extractCustomerInfoFromCustomFields = async (booking: any) => {
 
 export const sendBookingConfirmationEmail = async (booking: any) => {
   try {
-    const currentTransporter = getTransporter();
-    if (!isEmailConfigured() || !currentTransporter) {
+    const currentTransporter = await getTransporter();
+    const configured = await isEmailConfigured();
+    if (!configured || !currentTransporter) {
       console.log('[EMAIL] 電子郵件未設定，略過發送確認郵件。');
-      console.log('[EMAIL] Vui lòng kiểm tra file backend/.env có các biến: EMAIL_HOST, EMAIL_USER, EMAIL_PASS');
+      console.log('[EMAIL] Vui lòng kiểm tra cấu hình email trong admin panel hoặc file backend/.env có các biến: EMAIL_HOST, EMAIL_USER, EMAIL_PASS');
       return;
     }
 
@@ -357,8 +402,9 @@ export const sendBookingConfirmationEmail = async (booking: any) => {
 
 export const sendBookingReminderEmail = async (booking: any) => {
   try {
-    const currentTransporter = getTransporter();
-    if (!isEmailConfigured() || !currentTransporter) {
+    const currentTransporter = await getTransporter();
+    const configured = await isEmailConfigured();
+    if (!configured || !currentTransporter) {
       console.log('[EMAIL] 電子郵件未設定，略過發送提醒郵件。');
       return;
     }
@@ -453,8 +499,9 @@ export const sendBookingReminderEmail = async (booking: any) => {
 
 export const sendBookingCancellationEmail = async (booking: any, cancellationReason?: string, excludeAdminId?: string) => {
   try {
-    const currentTransporter = getTransporter();
-    if (!isEmailConfigured() || !currentTransporter) {
+    const currentTransporter = await getTransporter();
+    const configured = await isEmailConfigured();
+    if (!configured || !currentTransporter) {
       console.log('[EMAIL] 電子郵件未設定，略過發送取消郵件。');
       return;
     }
@@ -565,8 +612,9 @@ export const sendBookingCancellationEmail = async (booking: any, cancellationRea
 
 export const sendBookingConfirmedEmails = async (booking: any, actorAdminId?: string) => {
   try {
-    const currentTransporter = getTransporter();
-    if (!isEmailConfigured() || !currentTransporter) {
+    const currentTransporter = await getTransporter();
+    const configured = await isEmailConfigured();
+    if (!configured || !currentTransporter) {
       console.log('[EMAIL] 電子郵件未設定，略過核准後的確認郵件。');
       return;
     }

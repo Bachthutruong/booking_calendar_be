@@ -1,3 +1,4 @@
+export declare const invalidateEmailTransporter: () => Promise<void>;
 export declare const sendBookingConfirmationEmail: (booking: any) => Promise<void>;
 export declare const sendBookingReminderEmail: (booking: any) => Promise<void>;
 export declare const sendBookingCancellationEmail: (booking: any, cancellationReason?: string, excludeAdminId?: string) => Promise<void>;

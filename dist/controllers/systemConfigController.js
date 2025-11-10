@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAllSystemConfigs = exports.updateSystemConfig = exports.getSystemConfig = void 0;
 const express_validator_1 = require("express-validator");
 const SystemConfig_1 = __importDefault(require("../models/SystemConfig"));
+const emailService_1 = require("../utils/emailService");
 const getSystemConfig = async (req, res) => {
     try {
         const { type } = req.params;
@@ -22,6 +23,13 @@ const getSystemConfig = async (req, res) => {
                     services: ["諮詢預約", "24/7 支援", "自動化報告"],
                     support: ["使用指南", "FAQ", "聯絡支援"],
                     showFooter: true
+                },
+                email_config: {
+                    EMAIL_HOST: process.env.EMAIL_HOST || 'smtp.gmail.com',
+                    EMAIL_PORT: process.env.EMAIL_PORT || '587',
+                    EMAIL_USER: process.env.EMAIL_USER || '',
+                    EMAIL_PASS: process.env.EMAIL_PASS || '',
+                    EMAIL_FROM: process.env.EMAIL_FROM || process.env.EMAIL_USER || ''
                 },
                 email_template: {
                     bookingConfirmationSubject: "諮詢預約確認",
@@ -147,6 +155,10 @@ const updateSystemConfig = async (req, res) => {
             systemConfig.config = config;
         }
         await systemConfig.save();
+        // Nếu cập nhật email_config, vô hiệu hóa transporter cache
+        if (type === 'email_config') {
+            await (0, emailService_1.invalidateEmailTransporter)();
+        }
         res.json({
             success: true,
             config: systemConfig.config
@@ -170,6 +182,13 @@ const getAllSystemConfigs = async (req, res) => {
                 phone: "0123 456 789",
                 address: "越南胡志明市第一郡 ABC 路 123 號",
                 support: ["使用指南", "FAQ", "聯絡支援"]
+            },
+            email_config: {
+                EMAIL_HOST: process.env.EMAIL_HOST || 'smtp.gmail.com',
+                EMAIL_PORT: process.env.EMAIL_PORT || '587',
+                EMAIL_USER: process.env.EMAIL_USER || '',
+                EMAIL_PASS: process.env.EMAIL_PASS || '',
+                EMAIL_FROM: process.env.EMAIL_FROM || process.env.EMAIL_USER || ''
             },
             email_template: {
                 bookingConfirmationSubject: "諮詢預約確認",
@@ -266,7 +285,8 @@ const getAllSystemConfigs = async (req, res) => {
         const result = {
             footer: { ...defaultConfigs.footer, ...(configs.find(c => c.type === 'footer')?.config || {}) },
             email_template: { ...defaultConfigs.email_template, ...(configs.find(c => c.type === 'email_template')?.config || {}) },
-            general: { ...defaultConfigs.general, ...(configs.find(c => c.type === 'general')?.config || {}) }
+            general: { ...defaultConfigs.general, ...(configs.find(c => c.type === 'general')?.config || {}) },
+            email_config: { ...defaultConfigs.email_config, ...(configs.find(c => c.type === 'email_config')?.config || {}) }
         };
         res.json({
             success: true,

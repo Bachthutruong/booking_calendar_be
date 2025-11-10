@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
 import SystemConfig from '../models/SystemConfig';
+import { invalidateEmailTransporter } from '../utils/emailService';
 
 export const getSystemConfig = async (req: Request, res: Response) => {
   try {
@@ -20,6 +21,13 @@ export const getSystemConfig = async (req: Request, res: Response) => {
           services: ["諮詢預約", "24/7 支援", "自動化報告"],
           support: ["使用指南", "FAQ", "聯絡支援"],
           showFooter: true
+        },
+        email_config: {
+          EMAIL_HOST: process.env.EMAIL_HOST || 'smtp.gmail.com',
+          EMAIL_PORT: process.env.EMAIL_PORT || '587',
+          EMAIL_USER: process.env.EMAIL_USER || '',
+          EMAIL_PASS: process.env.EMAIL_PASS || '',
+          EMAIL_FROM: process.env.EMAIL_FROM || process.env.EMAIL_USER || ''
         },
         email_template: {
           bookingConfirmationSubject: "諮詢預約確認",
@@ -150,6 +158,11 @@ export const updateSystemConfig = async (req: Request, res: Response) => {
 
     await systemConfig.save();
 
+    // Nếu cập nhật email_config, vô hiệu hóa transporter cache
+    if (type === 'email_config') {
+      await invalidateEmailTransporter();
+    }
+
     res.json({
       success: true,
       config: systemConfig.config
@@ -173,6 +186,13 @@ export const getAllSystemConfigs = async (req: Request, res: Response) => {
         phone: "0123 456 789",
         address: "越南胡志明市第一郡 ABC 路 123 號",
         support: ["使用指南", "FAQ", "聯絡支援"]
+      },
+      email_config: {
+        EMAIL_HOST: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        EMAIL_PORT: process.env.EMAIL_PORT || '587',
+        EMAIL_USER: process.env.EMAIL_USER || '',
+        EMAIL_PASS: process.env.EMAIL_PASS || '',
+        EMAIL_FROM: process.env.EMAIL_FROM || process.env.EMAIL_USER || ''
       },
       email_template: {
         bookingConfirmationSubject: "諮詢預約確認",
@@ -270,7 +290,8 @@ export const getAllSystemConfigs = async (req: Request, res: Response) => {
     const result = {
       footer: { ...defaultConfigs.footer, ...(configs.find(c => c.type === 'footer')?.config || {}) },
       email_template: { ...defaultConfigs.email_template, ...(configs.find(c => c.type === 'email_template')?.config || {}) },
-      general: { ...defaultConfigs.general, ...(configs.find(c => c.type === 'general')?.config || {}) }
+      general: { ...defaultConfigs.general, ...(configs.find(c => c.type === 'general')?.config || {}) },
+      email_config: { ...defaultConfigs.email_config, ...(configs.find(c => c.type === 'email_config')?.config || {}) }
     };
 
     res.json({

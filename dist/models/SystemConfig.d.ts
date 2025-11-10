@@ -1,6 +1,6 @@
 import mongoose, { Document } from 'mongoose';
 export interface ISystemConfig extends Document {
-    type: 'footer' | 'email_template' | 'general' | 'success_page';
+    type: 'footer' | 'email_template' | 'general' | 'success_page' | 'email_config';
     config: {
         companyName?: string;
         companyDescription?: string;
@@ -29,6 +29,11 @@ export interface ISystemConfig extends Document {
         timezone?: string;
         reminderTime?: string;
         reminderHoursBefore?: number;
+        EMAIL_HOST?: string;
+        EMAIL_PORT?: string;
+        EMAIL_USER?: string;
+        EMAIL_PASS?: string;
+        EMAIL_FROM?: string;
     };
     isActive: boolean;
     createdAt: Date;
